@@ -1,4 +1,5 @@
 import abc
+import os
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
@@ -170,18 +171,18 @@ def model_factory(
         return OutlinesCompletionModel(model=model_id, base_url=base_url, temperature=temperature)
     elif platform == Platform.VLLM_CHAT:
         if base_url is None:
-            raise ValueError("base_url must be provided for custom models")
+            base_url = os.getenv("VLLM_BASE_URL", "http://localhost:8001/v1")
         from tau_bench.model_utils.model.vllm_chat import VLLMChatModel
 
         return VLLMChatModel(
             model=model_id,
             base_url=base_url,
-            api_key="sk-no-api-key-required" if api_key is None else api_key,
+            api_key=os.getenv("VLLM_API_KEY", "fake-api-key") if api_key is None else api_key,
             temperature=temperature,
         )
     else:
         if base_url is None:
-            raise ValueError("base_url must be provided for custom models")
+            base_url = os.getenv("VLLM_BASE_URL", "http://localhost:8001/v1")
         from tau_bench.model_utils.model.vllm_completion import VLLMCompletionModel
 
         return VLLMCompletionModel(model=model_id, base_url=base_url, temperature=temperature)

@@ -21,6 +21,7 @@ PRICE_PER_INPUT_TOKEN_MAP = {
     "meta-llama/Meta-Llama-3.1-8B-Instruct": 0.0,
     "meta-llama/Meta-Llama-3-70B-Instruct": 0.0,
     "mistralai/Mistral-Nemo-Instruct-2407": 0.0,
+    "Qwen/Qwen3-32B": 0.0,
 }
 INPUT_PRICE_PER_TOKEN_FALLBACK = 0.0
 
@@ -34,6 +35,7 @@ CAPABILITY_SCORE_MAP = {
     "sierra-research/Meta-Llama-3.1-8B-Instruct": 0.3,
     "meta-llama/Meta-Llama-3.1-70B-Instruct": 0.5,
     "mistralai/Mistral-Nemo-Instruct-2407": 0.3,
+    "Qwen/Qwen3-32B": 0.6,
 }
 CAPABILITY_SCORE_FALLBACK = 0.1
 
@@ -51,6 +53,7 @@ MAX_CONTEXT_LENGTH_MAP = {
     "sierra-research/Meta-Llama-3.1-8B-Instruct": 128000,
     "meta-llama/Meta-Llama-3.1-70B-Instruct": 128000,
     "mistralai/Mistral-Nemo-Instruct-2407": 128000,
+    "Qwen/Qwen3-32B": 32768,
 }
 MAX_CONTEXT_LENGTH_FALLBACK = 128000
 

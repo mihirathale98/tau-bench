@@ -1,5 +1,6 @@
 # Copyright Sierra
 
+import os
 import json
 import random
 from litellm import completion
@@ -47,13 +48,25 @@ class FewShotToolCallingAgent(Agent):
             {"role": "user", "content": obs},
         ]
         for _ in range(max_num_steps):
-            res = completion(
-                messages=messages,
-                model=self.model,
-                custom_llm_provider=self.provider,
-                tools=self.tools_info,
-                temperature=self.temperature,
-            )
+            # Handle vLLM with custom base URL
+            if self.provider == "hosted_vllm":
+                res = completion(
+                    messages=messages,
+                    model=self.model,
+                    custom_llm_provider=self.provider,
+                    tools=self.tools_info,
+                    temperature=self.temperature,
+                    base_url=os.getenv("VLLM_BASE_URL"),
+                    api_key=os.getenv("VLLM_API_KEY"),
+                )
+            else:
+                res = completion(
+                    messages=messages,
+                    model=self.model,
+                    custom_llm_provider=self.provider,
+                    tools=self.tools_info,
+                    temperature=self.temperature,
+                )
             next_message = res.choices[0].message.model_dump()
             total_cost += res._hidden_params["response_cost"]
             action = message_to_action(next_message)

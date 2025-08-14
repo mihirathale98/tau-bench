@@ -1,5 +1,6 @@
 # Copyright Sierra
 
+import os
 import json
 from litellm import completion
 
@@ -37,12 +38,23 @@ class ChatReActAgent(Agent):
     def generate_next_step(
         self, messages: List[Dict[str, Any]]
     ) -> Tuple[Dict[str, Any], Action, float]:
-        res = completion(
-            model=self.model,
-            custom_llm_provider=self.provider,
-            messages=messages,
-            temperature=self.temperature,
-        )
+        # Handle vLLM with custom base URL
+        if self.provider == "hosted_vllm":
+            res = completion(
+                model=self.model,
+                custom_llm_provider=self.provider,
+                messages=messages,
+                temperature=self.temperature,
+                base_url=os.getenv("VLLM_BASE_URL"),
+                api_key=os.getenv("VLLM_API_KEY"),
+            )
+        else:
+            res = completion(
+                model=self.model,
+                custom_llm_provider=self.provider,
+                messages=messages,
+                temperature=self.temperature,
+            )
         message = res.choices[0].message
         action_str = message.content.split("Action:")[-1].strip()
         try:
