@@ -89,3 +89,4 @@ class RunConfig(BaseModel):
     user_strategy: str = "llm"
     few_shot_displays_path: Optional[str] = None
     enable_reasoning_reflection: bool = True
+    use_inline_reflection: bool = True

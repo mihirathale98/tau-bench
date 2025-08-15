@@ -80,12 +80,20 @@ def parse_args() -> RunConfig:
         action="store_true",
         help="Disable reasoning reflection (overrides --enable-reasoning-reflection)"
     )
+    parser.add_argument(
+        "--use-separate-llm-reflection",
+        action="store_true",
+        help="Use separate LLM calls for reflection instead of inline prompts (default: False, uses inline)"
+    )
     args = parser.parse_args()
     
     # Handle reasoning reflection logic
     enable_reasoning_reflection = args.enable_reasoning_reflection
     if args.disable_reasoning_reflection:
         enable_reasoning_reflection = False
+    
+    # Handle inline reflection logic (default is True for inline)
+    use_inline_reflection = not args.use_separate_llm_reflection
     
     print(args)
     return RunConfig(
@@ -108,6 +116,7 @@ def parse_args() -> RunConfig:
         user_strategy=args.user_strategy,
         few_shot_displays_path=args.few_shot_displays_path,
         enable_reasoning_reflection=enable_reasoning_reflection,
+        use_inline_reflection=use_inline_reflection,
     )
 
 

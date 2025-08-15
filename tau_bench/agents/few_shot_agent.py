@@ -27,6 +27,7 @@ class FewShotToolCallingAgent(Agent):
         temperature: float = 0.0,
         num_few_shots: int = 5,
         enable_reasoning_reflection: bool = True,
+        use_inline_reflection: bool = True,
     ):
         self.tools_info = tools_info
         self.wiki = wiki
@@ -40,11 +41,15 @@ class FewShotToolCallingAgent(Agent):
         self.temperature = temperature
         self.num_few_shots = num_few_shots
         self.enable_reasoning_reflection = enable_reasoning_reflection
+        self.use_inline_reflection = use_inline_reflection
         
         # Initialize reasoning reflection generator if enabled
         if self.enable_reasoning_reflection:
             self.reflection_generator = ReasoningReflectionGenerator(
-                model=model, provider=provider, temperature=temperature
+                model=model, 
+                provider=provider, 
+                temperature=temperature,
+                use_inline_reflection=use_inline_reflection
             )
     def solve(
         self, env: Env, task_index: Optional[int] = None, max_num_steps: int = 30
@@ -89,6 +94,43 @@ class FewShotToolCallingAgent(Agent):
             
             if action.name != RESPOND_ACTION_NAME:
                 next_message["tool_calls"] = next_message["tool_calls"][:1]
+                
+                # Prepare tool response content
+                tool_response_content = env_response.observation
+                
+                # Generate reasoning reflection after tool call
+                if self.enable_reasoning_reflection:
+                    tool_call_info = extract_tool_call_info(next_message)
+                    if tool_call_info and self.reflection_generator.should_generate_reflection(tool_call_info, iteration):
+                        original_task = extract_original_task(messages)
+                        reflection_prompt = self.reflection_generator.generate_reflection(
+                            original_task=original_task,
+                            tool_call_info=tool_call_info,
+                            tool_response=env_response.observation,
+                            current_context=f"Iteration {iteration + 1}/{max_num_steps}"
+                        )
+                        
+                        if self.use_inline_reflection:
+                            # Append reflection prompt to tool response
+                            tool_response_content += f"\n\n{reflection_prompt}"
+                        else:
+                            # Add reflection as a separate system message (original approach)
+                            messages.extend([
+                                next_message,
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": next_message["tool_calls"][0]["id"],
+                                    "name": next_message["tool_calls"][0]["function"]["name"],
+                                    "content": tool_response_content,
+                                },
+                                {
+                                    "role": "system", 
+                                    "content": reflection_prompt
+                                }
+                            ])
+                            continue  # Skip the normal message extension below
+                
+                # Add messages with (potentially modified) tool response
                 messages.extend(
                     [
                         next_message,
@@ -96,27 +138,10 @@ class FewShotToolCallingAgent(Agent):
                             "role": "tool",
                             "tool_call_id": next_message["tool_calls"][0]["id"],
                             "name": next_message["tool_calls"][0]["function"]["name"],
-                            "content": env_response.observation,
+                            "content": tool_response_content,
                         },
                     ]
                 )
-                
-                # Generate reasoning reflection after tool call
-                if self.enable_reasoning_reflection:
-                    tool_call_info = extract_tool_call_info(next_message)
-                    if tool_call_info and self.reflection_generator.should_generate_reflection(tool_call_info, iteration):
-                        original_task = extract_original_task(messages)
-                        reflection = self.reflection_generator.generate_reflection(
-                            original_task=original_task,
-                            tool_call_info=tool_call_info,
-                            tool_response=env_response.observation,
-                            current_context=f"Iteration {iteration + 1}/{max_num_steps}"
-                        )
-                        # Add reflection as a system message before next iteration
-                        messages.append({
-                            "role": "system", 
-                            "content": reflection
-                        })
                         
             else:
                 messages.extend(

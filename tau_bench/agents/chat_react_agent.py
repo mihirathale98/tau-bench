@@ -29,6 +29,7 @@ class ChatReActAgent(Agent):
         use_reasoning: bool = True,
         temperature: float = 0.0,
         enable_reasoning_reflection: bool = True,
+        use_inline_reflection: bool = True,
     ) -> None:
         instruction = REACT_INSTRUCTION if use_reasoning else ACT_INSTRUCTION
         self.prompt = (
@@ -40,11 +41,15 @@ class ChatReActAgent(Agent):
         self.use_reasoning = use_reasoning
         self.tools_info = tools_info
         self.enable_reasoning_reflection = enable_reasoning_reflection
+        self.use_inline_reflection = use_inline_reflection
         
         # Initialize reasoning reflection generator if enabled
         if self.enable_reasoning_reflection:
             self.reflection_generator = ReasoningReflectionGenerator(
-                model=model, provider=provider, temperature=temperature
+                model=model, 
+                provider=provider, 
+                temperature=temperature,
+                use_inline_reflection=use_inline_reflection
             )
 
     def generate_next_step(
@@ -99,34 +104,47 @@ class ChatReActAgent(Agent):
             obs = response.observation
             reward = response.reward
             info = {**info, **response.info.model_dump()}
+            
+            # Prepare observation content
             if action.name != RESPOND_ACTION_NAME:
                 obs = "API output: " + obs
+                
+                # Generate reasoning reflection after tool call
+                if self.enable_reasoning_reflection:
+                    tool_call_info = {
+                        "name": action.name,
+                        "arguments": action.kwargs
+                    }
+                    if self.reflection_generator.should_generate_reflection(tool_call_info, iteration):
+                        original_task = extract_original_task(messages)
+                        reflection_prompt = self.reflection_generator.generate_reflection(
+                            original_task=original_task,
+                            tool_call_info=tool_call_info,
+                            tool_response=response.observation,
+                            current_context=f"Iteration {iteration + 1}/{max_num_steps}"
+                        )
+                        
+                        if self.use_inline_reflection:
+                            # Append reflection prompt to observation
+                            obs += f"\n\n{reflection_prompt}"
+                        else:
+                            # Add reflection as a separate system message (original approach)
+                            messages.extend([
+                                message,
+                                {"role": "user", "content": obs},
+                                {"role": "system", "content": reflection_prompt}
+                            ])
+                            total_cost += cost
+                            if response.done:
+                                break
+                            continue  # Skip the normal message extension below
+            
             messages.extend(
                 [
                     message,
                     {"role": "user", "content": obs},
                 ]
             )
-            
-            # Generate reasoning reflection after tool call (for non-respond actions)
-            if self.enable_reasoning_reflection and action.name != RESPOND_ACTION_NAME:
-                tool_call_info = {
-                    "name": action.name,
-                    "arguments": action.kwargs
-                }
-                if self.reflection_generator.should_generate_reflection(tool_call_info, iteration):
-                    original_task = extract_original_task(messages)
-                    reflection = self.reflection_generator.generate_reflection(
-                        original_task=original_task,
-                        tool_call_info=tool_call_info,
-                        tool_response=response.observation,
-                        current_context=f"Iteration {iteration + 1}/{max_num_steps}"
-                    )
-                    # Add reflection as a system message before next iteration
-                    messages.append({
-                        "role": "system", 
-                        "content": reflection
-                    })
             
             total_cost += cost
             if response.done:
