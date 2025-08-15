@@ -69,7 +69,24 @@ def parse_args() -> RunConfig:
     parser.add_argument("--shuffle", type=int, default=0)
     parser.add_argument("--user-strategy", type=str, default="llm", choices=[item.value for item in UserStrategy])
     parser.add_argument("--few-shot-displays-path", type=str, help="Path to a jsonlines file containing few shot displays")
+    parser.add_argument(
+        "--enable-reasoning-reflection",
+        action="store_true",
+        default=True,
+        help="Enable reasoning reflection after each tool call (default: True)"
+    )
+    parser.add_argument(
+        "--disable-reasoning-reflection",
+        action="store_true",
+        help="Disable reasoning reflection (overrides --enable-reasoning-reflection)"
+    )
     args = parser.parse_args()
+    
+    # Handle reasoning reflection logic
+    enable_reasoning_reflection = args.enable_reasoning_reflection
+    if args.disable_reasoning_reflection:
+        enable_reasoning_reflection = False
+    
     print(args)
     return RunConfig(
         model_provider=args.model_provider,
@@ -90,6 +107,7 @@ def parse_args() -> RunConfig:
         shuffle=args.shuffle,
         user_strategy=args.user_strategy,
         few_shot_displays_path=args.few_shot_displays_path,
+        enable_reasoning_reflection=enable_reasoning_reflection,
     )
 
 
