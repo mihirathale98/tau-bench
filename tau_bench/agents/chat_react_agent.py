@@ -12,6 +12,10 @@ from tau_bench.types import (
     RESPOND_ACTION_NAME,
     RESPOND_ACTION_FIELD_NAME,
 )
+from tau_bench.agents.reasoning_reflection import (
+    ReasoningReflectionGenerator,
+    extract_original_task
+)
 from typing import Optional, List, Dict, Any, Tuple
 
 
@@ -24,6 +28,7 @@ class ChatReActAgent(Agent):
         provider: str,
         use_reasoning: bool = True,
         temperature: float = 0.0,
+        enable_reasoning_reflection: bool = True,
     ) -> None:
         instruction = REACT_INSTRUCTION if use_reasoning else ACT_INSTRUCTION
         self.prompt = (
@@ -34,6 +39,13 @@ class ChatReActAgent(Agent):
         self.temperature = temperature
         self.use_reasoning = use_reasoning
         self.tools_info = tools_info
+        self.enable_reasoning_reflection = enable_reasoning_reflection
+        
+        # Initialize reasoning reflection generator if enabled
+        if self.enable_reasoning_reflection:
+            self.reflection_generator = ReasoningReflectionGenerator(
+                model=model, provider=provider, temperature=temperature
+            )
 
     def generate_next_step(
         self, messages: List[Dict[str, Any]]
@@ -81,7 +93,7 @@ class ChatReActAgent(Agent):
         ]
         total_cost = 0.0
         info = {}
-        for _ in range(max_num_steps):
+        for iteration in range(max_num_steps):
             message, action, cost = self.generate_next_step(messages)
             response = env.step(action)
             obs = response.observation
@@ -95,6 +107,27 @@ class ChatReActAgent(Agent):
                     {"role": "user", "content": obs},
                 ]
             )
+            
+            # Generate reasoning reflection after tool call (for non-respond actions)
+            if self.enable_reasoning_reflection and action.name != RESPOND_ACTION_NAME:
+                tool_call_info = {
+                    "name": action.name,
+                    "arguments": action.kwargs
+                }
+                if self.reflection_generator.should_generate_reflection(tool_call_info, iteration):
+                    original_task = extract_original_task(messages)
+                    reflection = self.reflection_generator.generate_reflection(
+                        original_task=original_task,
+                        tool_call_info=tool_call_info,
+                        tool_response=response.observation,
+                        current_context=f"Iteration {iteration + 1}/{max_num_steps}"
+                    )
+                    # Add reflection as a system message before next iteration
+                    messages.append({
+                        "role": "system", 
+                        "content": reflection
+                    })
+            
             total_cost += cost
             if response.done:
                 break

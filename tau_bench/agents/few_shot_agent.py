@@ -9,6 +9,11 @@ from typing import List, Optional, Dict, Any
 from tau_bench.agents.base import Agent
 from tau_bench.envs.base import Env
 from tau_bench.types import SolveResult, Action, RESPOND_ACTION_NAME
+from tau_bench.agents.reasoning_reflection import (
+    ReasoningReflectionGenerator,
+    extract_tool_call_info,
+    extract_original_task
+)
 
 
 class FewShotToolCallingAgent(Agent):
@@ -21,6 +26,7 @@ class FewShotToolCallingAgent(Agent):
         few_shot_displays: List[str],
         temperature: float = 0.0,
         num_few_shots: int = 5,
+        enable_reasoning_reflection: bool = True,
     ):
         self.tools_info = tools_info
         self.wiki = wiki
@@ -33,6 +39,13 @@ class FewShotToolCallingAgent(Agent):
         self.few_shot_displays = few_shot_displays
         self.temperature = temperature
         self.num_few_shots = num_few_shots
+        self.enable_reasoning_reflection = enable_reasoning_reflection
+        
+        # Initialize reasoning reflection generator if enabled
+        if self.enable_reasoning_reflection:
+            self.reflection_generator = ReasoningReflectionGenerator(
+                model=model, provider=provider, temperature=temperature
+            )
     def solve(
         self, env: Env, task_index: Optional[int] = None, max_num_steps: int = 30
     ) -> SolveResult:
@@ -47,7 +60,7 @@ class FewShotToolCallingAgent(Agent):
             {"role": "system", "content": f"{self.wiki}\n\n{few_shots}"},
             {"role": "user", "content": obs},
         ]
-        for _ in range(max_num_steps):
+        for iteration in range(max_num_steps):
             # Handle vLLM with custom base URL
             if self.provider == "hosted_vllm":
                 res = completion(
@@ -73,6 +86,7 @@ class FewShotToolCallingAgent(Agent):
             env_response = env.step(action)
             reward = env_response.reward
             info = {**info, **env_response.info.model_dump()}
+            
             if action.name != RESPOND_ACTION_NAME:
                 next_message["tool_calls"] = next_message["tool_calls"][:1]
                 messages.extend(
@@ -86,6 +100,24 @@ class FewShotToolCallingAgent(Agent):
                         },
                     ]
                 )
+                
+                # Generate reasoning reflection after tool call
+                if self.enable_reasoning_reflection:
+                    tool_call_info = extract_tool_call_info(next_message)
+                    if tool_call_info and self.reflection_generator.should_generate_reflection(tool_call_info, iteration):
+                        original_task = extract_original_task(messages)
+                        reflection = self.reflection_generator.generate_reflection(
+                            original_task=original_task,
+                            tool_call_info=tool_call_info,
+                            tool_response=env_response.observation,
+                            current_context=f"Iteration {iteration + 1}/{max_num_steps}"
+                        )
+                        # Add reflection as a system message before next iteration
+                        messages.append({
+                            "role": "system", 
+                            "content": reflection
+                        })
+                        
             else:
                 messages.extend(
                     [

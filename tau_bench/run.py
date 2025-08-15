@@ -134,6 +134,7 @@ def agent_factory(
             model=config.model,
             provider=config.model_provider,
             temperature=config.temperature,
+            enable_reasoning_reflection=config.enable_reasoning_reflection,
         )
     elif config.agent_strategy == "act":
         # `act` from https://arxiv.org/abs/2210.03629
@@ -146,6 +147,7 @@ def agent_factory(
             provider=config.model_provider,
             use_reasoning=False,
             temperature=config.temperature,
+            enable_reasoning_reflection=config.enable_reasoning_reflection,
         )
     elif config.agent_strategy == "react":
         # `react` from https://arxiv.org/abs/2210.03629
@@ -158,6 +160,7 @@ def agent_factory(
             provider=config.model_provider,
             use_reasoning=True,
             temperature=config.temperature,
+            enable_reasoning_reflection=config.enable_reasoning_reflection,
         )
     elif config.agent_strategy == "few-shot":
         from tau_bench.agents.few_shot_agent import FewShotToolCallingAgent
@@ -172,6 +175,7 @@ def agent_factory(
             provider=config.model_provider,
             few_shot_displays=few_shot_displays,
             temperature=config.temperature,
+            enable_reasoning_reflection=config.enable_reasoning_reflection,
         )
     else:
         raise ValueError(f"Unknown agent strategy: {config.agent_strategy}")
