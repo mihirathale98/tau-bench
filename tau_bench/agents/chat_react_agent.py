@@ -12,9 +12,10 @@ from tau_bench.types import (
     RESPOND_ACTION_NAME,
     RESPOND_ACTION_FIELD_NAME,
 )
-from tau_bench.agents.reasoning_reflection import (
-    ReasoningReflectionGenerator,
-    extract_original_task
+from tau_bench.agents.post_tool_reflection import (
+    PostToolReflectionGenerator,
+    extract_original_task,
+    extract_tool_error
 )
 from typing import Optional, List, Dict, Any, Tuple
 
@@ -29,7 +30,6 @@ class ChatReActAgent(Agent):
         use_reasoning: bool = True,
         temperature: float = 0.0,
         enable_reasoning_reflection: bool = True,
-        use_inline_reflection: bool = True,
     ) -> None:
         instruction = REACT_INSTRUCTION if use_reasoning else ACT_INSTRUCTION
         self.prompt = (
@@ -41,15 +41,13 @@ class ChatReActAgent(Agent):
         self.use_reasoning = use_reasoning
         self.tools_info = tools_info
         self.enable_reasoning_reflection = enable_reasoning_reflection
-        self.use_inline_reflection = use_inline_reflection
         
-        # Initialize reasoning reflection generator if enabled
+        # Initialize post-tool reflection generator if enabled
         if self.enable_reasoning_reflection:
-            self.reflection_generator = ReasoningReflectionGenerator(
+            self.reflection_generator = PostToolReflectionGenerator(
                 model=model, 
                 provider=provider, 
-                temperature=temperature,
-                use_inline_reflection=use_inline_reflection
+                temperature=temperature
             )
 
     def generate_next_step(
@@ -108,43 +106,37 @@ class ChatReActAgent(Agent):
             # Prepare observation content
             if action.name != RESPOND_ACTION_NAME:
                 obs = "API output: " + obs
-                
-                # Generate reasoning reflection after tool call
-                if self.enable_reasoning_reflection:
-                    tool_call_info = {
-                        "name": action.name,
-                        "arguments": action.kwargs
-                    }
-                    if self.reflection_generator.should_generate_reflection(tool_call_info, iteration):
-                        original_task = extract_original_task(messages)
-                        reflection_prompt = self.reflection_generator.generate_reflection(
-                            original_task=original_task,
-                            tool_call_info=tool_call_info,
-                            tool_response=response.observation,
-                            current_context=f"Iteration {iteration + 1}/{max_num_steps}"
-                        )
-                        
-                        if self.use_inline_reflection:
-                            # Append reflection prompt to observation
-                            obs += f"\n\n{reflection_prompt}"
-                        else:
-                            # Add reflection as a separate system message (original approach)
-                            messages.extend([
-                                message,
-                                {"role": "user", "content": obs},
-                                {"role": "system", "content": reflection_prompt}
-                            ])
-                            total_cost += cost
-                            if response.done:
-                                break
-                            continue  # Skip the normal message extension below
             
-            messages.extend(
-                [
-                    message,
-                    {"role": "user", "content": obs},
-                ]
-            )
+            # Add the assistant message and user observation
+            messages.extend([
+                message,
+                {"role": "user", "content": obs},
+            ])
+            
+            # Generate comprehensive post-tool reflection and add as assistant message
+            if action.name != RESPOND_ACTION_NAME and self.enable_reasoning_reflection:
+                tool_call_info = {
+                    "name": action.name,
+                    "arguments": action.kwargs
+                }
+                if self.reflection_generator.should_generate_reflection(tool_call_info, iteration):
+                    original_task = extract_original_task(messages)
+                    tool_error = extract_tool_error(response)
+                    
+                    reflection_content = self.reflection_generator.generate_reflection(
+                        original_task=original_task,
+                        conversation_history=messages,
+                        tool_call_info=tool_call_info,
+                        tool_response=response.observation,
+                        tool_error=tool_error,
+                        current_context=f"Iteration {iteration + 1}/{max_num_steps}"
+                    )
+                    
+                    # Add reflection as a separate assistant message
+                    messages.append({
+                        "role": "assistant",
+                        "content": reflection_content
+                    })
             
             total_cost += cost
             if response.done:
