@@ -12,6 +12,7 @@ from tau_bench.types import (
     RESPOND_ACTION_NAME,
     RESPOND_ACTION_FIELD_NAME,
 )
+from tau_bench.agents.reasoning_reflection import ReasoningReflectionGenerator
 from typing import Optional, List, Dict, Any, Tuple
 
 
@@ -36,6 +37,14 @@ class ChatReActAgent(Agent):
         self.use_reasoning = use_reasoning
         self.tools_info = tools_info
         self.enable_reasoning_reflection = enable_reasoning_reflection
+        
+        # Initialize reasoning reflection generator if enabled
+        if self.enable_reasoning_reflection:
+            self.reflection_generator = ReasoningReflectionGenerator(
+                model=model,  # Use the same model as the agent
+                provider=provider,
+                temperature=0.0
+            )
         
 
     def generate_next_step(
@@ -100,6 +109,28 @@ class ChatReActAgent(Agent):
                 message,
                 {"role": "user", "content": obs},
             ])
+            
+            # Add reasoning reflection if enabled and this was a tool call (not respond)
+            if self.enable_reasoning_reflection and action.name != RESPOND_ACTION_NAME:
+                tool_call_info = {
+                    "name": action.name,
+                    "arguments": action.kwargs
+                }
+                if self.reflection_generator.should_generate_reflection(tool_call_info):
+                    try:
+                        reflection_content = self.reflection_generator.generate_reflection(
+                            messages=messages,
+                            tool_call_info=tool_call_info,
+                            tool_response=response.observation
+                        )
+                        # Add reflection as an assistant message
+                        messages.append({
+                            "role": "assistant",
+                            "content": reflection_content
+                        })
+                    except Exception as e:
+                        # If reflection generation fails, continue without it
+                        print(f"Warning: Failed to generate reasoning reflection: {e}")
             
             
             total_cost += cost

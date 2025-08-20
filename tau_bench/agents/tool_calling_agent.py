@@ -8,6 +8,7 @@ from typing import List, Optional, Dict, Any
 from tau_bench.agents.base import Agent
 from tau_bench.envs.base import Env
 from tau_bench.types import SolveResult, Action, RESPOND_ACTION_NAME
+from tau_bench.agents.reasoning_reflection import ReasoningReflectionGenerator, extract_tool_call_info
 
 
 class ToolCallingAgent(Agent):
@@ -26,6 +27,14 @@ class ToolCallingAgent(Agent):
         self.provider = provider
         self.temperature = temperature
         self.enable_reasoning_reflection = enable_reasoning_reflection
+        
+        # Initialize reasoning reflection generator if enabled
+        if self.enable_reasoning_reflection:
+            self.reflection_generator = ReasoningReflectionGenerator(
+                model=model,  # Use the same model as the agent
+                provider=provider,
+                temperature=0.0
+            )
         
 
     def solve(
@@ -81,6 +90,24 @@ class ToolCallingAgent(Agent):
                     },
                 ])
                 
+                # Add reasoning reflection if enabled
+                if self.enable_reasoning_reflection:
+                    tool_call_info = extract_tool_call_info(next_message)
+                    if tool_call_info and self.reflection_generator.should_generate_reflection(tool_call_info):
+                        try:
+                            reflection_content = self.reflection_generator.generate_reflection(
+                                messages=messages,
+                                tool_call_info=tool_call_info,
+                                tool_response=env_response.observation
+                            )
+                            # Add reflection as an assistant message
+                            messages.append({
+                                "role": "assistant",
+                                "content": reflection_content
+                            })
+                        except Exception as e:
+                            # If reflection generation fails, continue without it
+                            print(f"Warning: Failed to generate reasoning reflection: {e}")
                         
             else:
                 messages.extend(

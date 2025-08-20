@@ -24,27 +24,25 @@ class ReasoningReflectionGenerator:
     
     def generate_reflection(
         self,
-        original_task: str,
+        messages: List[Dict[str, Any]],
         tool_call_info: Dict[str, Any],
-        tool_response: str,
-        current_context: Optional[str] = None
+        tool_response: str
     ) -> str:
         """
         Generate a reasoning reflection based on the tool call and its result.
         
         Args:
-            original_task: The original problem/task the agent is trying to solve
+            messages: Full conversation history for context
             tool_call_info: Information about the tool call (name, arguments)
             tool_response: The response/output from the tool call
-            current_context: Optional context about the current state of problem solving
             
         Returns:
-            A formatted reasoning reflection string or inline prompt
+            A first-person reflection from the assistant's perspective
         """
         
         # Generate reflection content for assistant message
-        prompt = self._create_assistant_reflection_prompt(
-            original_task, tool_call_info, tool_response, current_context
+        prompt = self._create_first_person_reflection_prompt(
+            messages, tool_call_info, tool_response
         )
         
         try:
@@ -72,40 +70,46 @@ class ReasoningReflectionGenerator:
         except Exception as e:
             raise e
     
-    def _create_assistant_reflection_prompt(
+    def _create_first_person_reflection_prompt(
         self,
-        original_task: str,
+        messages: List[Dict[str, Any]],
         tool_call_info: Dict[str, Any],
-        tool_response: str,
-        current_context: Optional[str] = None
+        tool_response: str
     ) -> str:
-        """Create the prompt for generating reflection content for assistant messages."""
+        """Create the prompt for generating first-person reflection content."""
         
-        context_section = f"\n\nCurrent Context: {current_context}" if current_context else ""
+        # Format the conversation history for context
+        conversation_context = ""
+        for msg in messages[-10:]:  # Use last 10 messages for context
+            role = msg.get('role', 'unknown')
+            content = msg.get('content', '') or ''  # Handle None content
+            if role == 'system':
+                continue  # Skip system messages in context
+            elif role == 'user':
+                conversation_context += f"User: {content[:200]}...\n" if len(content) > 200 else f"User: {content}\n"
+            elif role == 'assistant':
+                conversation_context += f"Me: {content[:200]}...\n" if len(content) > 200 else f"Me: {content}\n"
+            elif role == 'tool':
+                conversation_context += f"Tool Result: {content[:100]}...\n" if len(content) > 100 else f"Tool Result: {content}\n"
         
-        return f"""You are an AI assistant that generates concise reasoning reflections after tool calls. 
+        return f"""You are an AI assistant reflecting on your own actions. Based on the conversation history and the tool call you just made, provide a brief reflection on what you learned and how it helps you solve the user's problem.
 
-Your task is to analyze a tool call and its result, then provide a brief reflection that includes:
-1. What information was retrieved by the tool
-2. How important/relevant this information is to solving the original problem
-3. What insights or next steps this suggests
+Recent Conversation:
+{conversation_context}
 
-Original Task/Problem: {original_task}
-
-Tool Call Made:
-- Tool Name: {tool_call_info.get('name', 'Unknown')}
+Tool Call I Just Made:
+- Tool: {tool_call_info.get('name', 'Unknown')}
 - Arguments: {json.dumps(tool_call_info.get('arguments', {}), indent=2)}
 
-Tool Response/Output:
+Tool Response I Received:
 {tool_response}
-{context_section}
 
-Generate a concise reasoning reflection (2-4 sentences) that summarizes:
-1. The key information obtained from this tool call
-2. Its relevance/importance to the original problem (High/Medium/Low)
-3. Any insights or implications for next steps
+Provide a brief first-person reflection (2-3 sentences) from your perspective as the assistant. Focus on:
+1. What key information you obtained from this tool call
+2. How this information helps you progress toward solving the user's request
+3. What you plan to do next (if applicable)
 
-Keep it brief and focused. Respond as if you are the assistant reflecting on what you just learned from the tool call."""
+You are the assistant reflecting on your own action. Be concise, natural and conversational."""
 
 
     def should_generate_reflection(
