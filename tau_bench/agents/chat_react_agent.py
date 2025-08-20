@@ -12,11 +12,6 @@ from tau_bench.types import (
     RESPOND_ACTION_NAME,
     RESPOND_ACTION_FIELD_NAME,
 )
-from tau_bench.agents.post_tool_reflection import (
-    PostToolReflectionGenerator,
-    extract_original_task,
-    extract_tool_error
-)
 from typing import Optional, List, Dict, Any, Tuple
 
 
@@ -42,13 +37,6 @@ class ChatReActAgent(Agent):
         self.tools_info = tools_info
         self.enable_reasoning_reflection = enable_reasoning_reflection
         
-        # Initialize post-tool reflection generator if enabled
-        if self.enable_reasoning_reflection:
-            self.reflection_generator = PostToolReflectionGenerator(
-                model=model, 
-                provider=provider, 
-                temperature=temperature
-            )
 
     def generate_next_step(
         self, messages: List[Dict[str, Any]]
@@ -113,30 +101,6 @@ class ChatReActAgent(Agent):
                 {"role": "user", "content": obs},
             ])
             
-            # Generate comprehensive post-tool reflection and add as assistant message
-            if action.name != RESPOND_ACTION_NAME and self.enable_reasoning_reflection:
-                tool_call_info = {
-                    "name": action.name,
-                    "arguments": action.kwargs
-                }
-                if self.reflection_generator.should_generate_reflection(tool_call_info, iteration):
-                    original_task = extract_original_task(messages)
-                    tool_error = extract_tool_error(response)
-                    
-                    reflection_content = self.reflection_generator.generate_reflection(
-                        original_task=original_task,
-                        conversation_history=messages,
-                        tool_call_info=tool_call_info,
-                        tool_response=response.observation,
-                        tool_error=tool_error,
-                        current_context=f"Iteration {iteration + 1}/{max_num_steps}"
-                    )
-                    
-                    # Add reflection as a separate assistant message
-                    messages.append({
-                        "role": "assistant",
-                        "content": reflection_content
-                    })
             
             total_cost += cost
             if response.done:
