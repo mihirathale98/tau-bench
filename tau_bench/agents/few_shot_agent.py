@@ -1,13 +1,14 @@
 # Copyright Sierra
 
+import os
 import json
 import random
-from litellm import completion
 from typing import List, Optional, Dict, Any
 
 from tau_bench.agents.base import Agent
 from tau_bench.envs.base import Env
 from tau_bench.types import SolveResult, Action, RESPOND_ACTION_NAME
+from tau_bench.model_utils.llm_completion import call_completion
 
 
 class FewShotToolCallingAgent(Agent):
@@ -47,15 +48,23 @@ class FewShotToolCallingAgent(Agent):
             {"role": "user", "content": obs},
         ]
         for _ in range(max_num_steps):
-            res = completion(
+            if self.provider == "hosted_vllm":
+                base_url = os.getenv("VLLM_BASE_URL")
+                api_key = os.getenv("VLLM_API_KEY", 'empty')
+            else:
+                base_url = None
+                api_key = None
+            res = call_completion(
                 messages=messages,
                 model=self.model,
                 custom_llm_provider=self.provider,
                 tools=self.tools_info,
                 temperature=self.temperature,
+                base_url=base_url,
+                api_key=api_key,
             )
             next_message = res.choices[0].message.model_dump()
-            total_cost += res._hidden_params["response_cost"]
+            total_cost += res._hidden_params["response_cost"] if '_hidden_params' in res else 0.0
             action = message_to_action(next_message)
             env_response = env.step(action)
             reward = env_response.reward
