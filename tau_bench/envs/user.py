@@ -1,11 +1,12 @@
 # Copyright Sierra
 
 import abc
+import os
 import enum
-from litellm import completion
 
 from typing import Optional, List, Dict, Any, Union
 
+from tau_bench.model_utils.llm_completion import call_completion
 
 class BaseUserSimulationEnv(abc.ABC):
     metadata = {}
@@ -44,12 +45,18 @@ class LLMUserSimulationEnv(BaseUserSimulationEnv):
         self.reset()
 
     def generate_next_message(self, messages: List[Dict[str, Any]]) -> str:
-        res = completion(
-            model=self.model, custom_llm_provider=self.provider, messages=messages
+        if self.provider == "hosted_vllm":
+            base_url = os.getenv("USER_VLLM_BASE_URL")
+            api_key = os.getenv("USER_VLLM_API_KEY", 'empty')
+        else:
+            base_url = None
+            api_key = None
+        res = call_completion(
+            model=self.model, custom_llm_provider=self.provider, messages=messages, base_url=base_url, api_key=api_key
         )
         message = res.choices[0].message
         self.messages.append(message.model_dump())
-        self.total_cost = res._hidden_params["response_cost"]
+        self.total_cost = res._hidden_params["response_cost"] if '_hidden_params' in res else 0.0
         return message.content
 
     def build_system_prompt(self, instruction: Optional[str]) -> str:
