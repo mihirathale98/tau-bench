@@ -135,11 +135,18 @@ Be direct, strategic, and focus on improving efficiency rather than just summari
 
     def should_generate_reflection(
         self,
-        tool_call_info: Dict[str, Any]
+        tool_call_info: Dict[str, Any],
+        messages: Optional[List[Dict[str, Any]]] = None,
+        tool_response: Optional[str] = None
     ) -> bool:
         """
         Determine if a reflection should be generated for this tool call.
-        Can be used to skip reflections for certain tool types or conditions.
+        Uses smart filtering to reduce unnecessary reflections.
+        
+        Args:
+            tool_call_info: Information about the tool call
+            messages: Conversation history for context analysis
+            tool_response: The tool's response for success/failure detection
         """
         
         # Skip reflection for respond actions (final responses)
@@ -149,9 +156,13 @@ Be direct, strategic, and focus on improving efficiency rather than just summari
         # Skip reflection for think actions (internal reasoning)
         if tool_call_info.get('name') == 'think':
             return False
+        
+        # If we don't have context, use conservative approach (generate reflection)
+        if not messages or not tool_response:
+            return True
             
-        # Always generate for other tool calls
-        return True
+        # Smart filtering based on multiple criteria
+        return self._should_reflect_smart_filter(tool_call_info, messages, tool_response)
     
     def _detect_inefficiencies(self, messages: List[Dict[str, Any]], tool_response: str) -> List[str]:
         """Detect potential inefficiencies or issues in the conversation."""
