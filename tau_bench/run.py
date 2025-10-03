@@ -15,13 +15,14 @@ from tau_bench.agents.base import Agent
 from tau_bench.types import EnvRunResult, RunConfig
 from litellm import provider_list
 from tau_bench.envs.user import UserStrategy
+from tau_bench.agents.mem_module import MemModule
 
 
 def run(config: RunConfig) -> List[EnvRunResult]:
     assert config.env in ["retail", "airline"], "Only retail and airline envs are supported"
     assert config.model_provider in provider_list, "Invalid model provider"
     assert config.user_model_provider in provider_list, "Invalid user model provider"
-    assert config.agent_strategy in ["tool-calling", "act", "react", "few-shot"], "Invalid agent strategy"
+    assert config.agent_strategy in ["tool-calling", "act", "react", "few-shot", "langgraph", "memory"], "Invalid agent strategy"
     assert config.task_split in ["train", "test", "dev"], "Invalid task split"
     assert config.user_strategy in [item.value for item in UserStrategy], "Invalid user strategy"
 
@@ -49,6 +50,23 @@ def run(config: RunConfig) -> List[EnvRunResult]:
     )
     results: List[EnvRunResult] = []
     lock = multiprocessing.Lock()
+
+    # Initialize token info accumulator with metadata
+    all_token_info = {
+        "metadata": {
+            "model": config.model,
+            "user_model": config.user_model,
+            "env": config.env
+        },
+        "token_info": []
+    }
+    
+    if config.task_split == "train":
+        delete_existing = True
+    else:
+        delete_existing = False
+    
+    memory = MemModule(collection_name=f"memory_{config.env}", delete_existing=delete_existing)
     if config.task_ids and len(config.task_ids) > 0:
         print(f"Running tasks {config.task_ids} (checkpoint path: {ckpt_path})")
     else:
@@ -78,7 +96,11 @@ def run(config: RunConfig) -> List[EnvRunResult]:
                 res = agent.solve(
                     env=isolated_env,
                     task_index=idx,
+                    memory=memory,
+                    mode=config.task_split,
+                    budget=config.budget,
                 )
+                token_info = res.token_info
                 result = EnvRunResult(
                     task_id=idx,
                     reward=res.reward,
@@ -94,10 +116,11 @@ def run(config: RunConfig) -> List[EnvRunResult]:
                     traj=[],
                     trial=i,
                 )
+                token_info = [] # Empty list
             print(
                 "✅" if result.reward == 1 else "❌",
                 f"task_id={idx}",
-                result.info,
+                # result.info,
             )
             print("-----")
             with lock:
@@ -107,18 +130,33 @@ def run(config: RunConfig) -> List[EnvRunResult]:
                         data = json.load(f)
                 with open(ckpt_path, "w") as f:
                     json.dump(data + [result.model_dump()], f, indent=2)
+
+                # Accumulate token info with task_id and usage structure
+                if token_info:  # Only add if there's token info
+                    all_token_info["token_info"].append({
+                        "task_id": idx,
+                        "usage": token_info
+                    })
+
+                # Save accumulated token info
+                with open(ckpt_path.replace(".json", "_token_info.json"), "w") as f:
+                    json.dump(all_token_info, f, indent=2)
             return result
 
         with ThreadPoolExecutor(max_workers=config.max_concurrency) as executor:
             res = list(executor.map(_run, idxs))
             results.extend(res)
 
-    display_metrics(results)
-
+    pass_hat_ks = display_metrics(results)
+    with open(ckpt_path.replace(".json", "_pass_hat_ks.json"), "w") as f:
+        json.dump(pass_hat_ks, f, indent=2)
+        
     with open(ckpt_path, "w") as f:
         json.dump([result.model_dump() for result in results], f, indent=2)
         print(f"\n📄 Results saved to {ckpt_path}\n")
     return results
+   
+   # Both Phoenix and file export
 
 
 def agent_factory(
@@ -173,11 +211,35 @@ def agent_factory(
             few_shot_displays=few_shot_displays,
             temperature=config.temperature,
         )
+    elif config.agent_strategy == "langgraph":
+        
+        # LangGraph-based tool calling agent
+        from tau_bench.agents.langgraph_tool_call_agent import LangGraphToolCallingAgent
+
+        return LangGraphToolCallingAgent(
+            tools_info=tools_info,
+            wiki=wiki,
+            model=config.model,
+            provider=config.model_provider,
+            temperature=config.temperature,
+            save_traces_locally=True,        # Enable local saving
+            local_traces_path="./airline_traces_granite",
+            
+        )
+    elif config.agent_strategy == "memory":
+        from tau_bench.agents.memory_agent import MemoryAgent
+        return MemoryAgent(
+            tools_info=tools_info,
+            wiki=wiki,
+            model=config.model,
+            provider=config.model_provider,
+            temperature=config.temperature,
+        )
     else:
         raise ValueError(f"Unknown agent strategy: {config.agent_strategy}")
 
 
-def display_metrics(results: List[EnvRunResult]) -> None:
+def display_metrics(results: List[EnvRunResult]) -> dict[int, float]:
     def is_successful(reward: float) -> bool:
         return (1 - 1e-6) <= reward <= (1 + 1e-6)
 
@@ -201,3 +263,4 @@ def display_metrics(results: List[EnvRunResult]) -> None:
     print("📈 Pass^k")
     for k, pass_hat_k in pass_hat_ks.items():
         print(f"  k={k}: {pass_hat_k}")
+    return pass_hat_ks

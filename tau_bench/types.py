@@ -40,6 +40,7 @@ class SolveResult(BaseModel):
     messages: List[Dict[str, Any]]
     info: Dict[str, Any]
     total_cost: Optional[float] = None
+    token_info: Optional[List[Dict[str, Any]]] = None
 
 
 class EnvInfo(BaseModel):
@@ -88,3 +89,4 @@ class RunConfig(BaseModel):
     shuffle: int = 0
     user_strategy: str = "llm"
     few_shot_displays_path: Optional[str] = None
+    budget: int = 4

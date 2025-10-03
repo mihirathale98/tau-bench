@@ -153,6 +153,7 @@ class Env(object):
                         and output.lower()
                         in action.kwargs["content"].lower().replace(",", "")
                     ):
+                        print("found output: ", output)
                         found = True
                         break
                 outputs[output] = found
