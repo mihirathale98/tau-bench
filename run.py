@@ -40,7 +40,7 @@ def parse_args() -> RunConfig:
         "--agent-strategy",
         type=str,
         default="tool-calling",
-        choices=["tool-calling", "act", "react", "few-shot", "langgraph", "memory"],
+        choices=["tool-calling", "act", "react", "few-shot", "langgraph", "memory", "memory-mem0"],
     )
     parser.add_argument(
         "--temperature",

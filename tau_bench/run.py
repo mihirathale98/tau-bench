@@ -22,7 +22,7 @@ def run(config: RunConfig) -> List[EnvRunResult]:
     assert config.env in ["retail", "airline"], "Only retail and airline envs are supported"
     assert config.model_provider in provider_list, "Invalid model provider"
     assert config.user_model_provider in provider_list, "Invalid user model provider"
-    assert config.agent_strategy in ["tool-calling", "act", "react", "few-shot", "langgraph", "memory"], "Invalid agent strategy"
+    assert config.agent_strategy in ["tool-calling", "act", "react", "few-shot", "langgraph", "memory", "memory-mem0"], "Invalid agent strategy"
     assert config.task_split in ["train", "test", "dev"], "Invalid task split"
     assert config.user_strategy in [item.value for item in UserStrategy], "Invalid user strategy"
 
@@ -65,8 +65,15 @@ def run(config: RunConfig) -> List[EnvRunResult]:
         delete_existing = True
     else:
         delete_existing = False
-    
-    memory = MemModule(collection_name=f"memory_{config.env}", delete_existing=delete_existing)
+
+    # Initialize appropriate memory module based on agent strategy
+    if config.agent_strategy == "memory-mem0":
+        from tau_bench.agents.mem0_module import Mem0Module
+        memory = Mem0Module(collection_name=f"memory_{config.env}", delete_existing=delete_existing)
+    elif config.agent_strategy == "memory":
+        memory = MemModule(collection_name=f"memory_{config.env}", delete_existing=delete_existing)
+    else:
+        memory = None  # Non-memory strategies don't need memory module
     if config.task_ids and len(config.task_ids) > 0:
         print(f"Running tasks {config.task_ids} (checkpoint path: {ckpt_path})")
     else:
@@ -229,6 +236,15 @@ def agent_factory(
     elif config.agent_strategy == "memory":
         from tau_bench.agents.memory_agent import MemoryAgent
         return MemoryAgent(
+            tools_info=tools_info,
+            wiki=wiki,
+            model=config.model,
+            provider=config.model_provider,
+            temperature=config.temperature,
+        )
+    elif config.agent_strategy == "memory-mem0":
+        from tau_bench.agents.memory_agent_mem0 import MemoryAgentMem0
+        return MemoryAgentMem0(
             tools_info=tools_info,
             wiki=wiki,
             model=config.model,

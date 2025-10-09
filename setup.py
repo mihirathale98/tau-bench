@@ -18,6 +18,7 @@ setup(
         "termcolor>=2.4.0",
         "numpy>=1.26.4",
         "litellm>=1.41.0",
+        "mem0ai>=0.0.1",
     ],
     extras_require={
         "langgraph": [
