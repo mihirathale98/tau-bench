@@ -71,7 +71,7 @@ class ToolCallingAgent(Agent):
                 custom_llm_provider=self.provider,
                 tools=self.tools_info,
                 temperature=self.temperature,
-                budget=budget,
+                # budget=budget,  # DISABLED: Not supported by OpenAI API
                 # return_response_only=False,
                 api_base=os.getenv("AGENT_BASE_URL"),
                 api_key=os.getenv("OPENAI_API_KEY", "dummy-key"),

@@ -152,22 +152,33 @@ class Mem0Module:
             # Convert mem0 format to our expected format
             memories = []
             for result in results:
-                # mem0 returns: {'id', 'memory', 'metadata', 'score', ...}
-                memory_text = result.get('memory', '')
-                metadata = result.get('metadata', {})
+                # Handle both dict and string formats from mem0
+                if isinstance(result, str):
+                    # If result is a string, it's just the memory text
+                    # We don't have metadata, so skip filtering
+                    memories.append({
+                        'memory': result,
+                        'intent': '',
+                        'reward': 1.0,  # Assume high quality if we can't filter
+                        'task_index': -1,
+                    })
+                elif isinstance(result, dict):
+                    # mem0 returns: {'id', 'memory', 'metadata', 'score', ...}
+                    memory_text = result.get('memory', '')
+                    metadata = result.get('metadata', {})
 
-                # Apply reward filter if specified
-                if filter and 'reward' in filter:
-                    min_reward = filter['reward']
-                    if metadata.get('reward', 0) < min_reward:
-                        continue
+                    # Apply reward filter if specified
+                    if filter and 'reward' in filter:
+                        min_reward = filter['reward']
+                        if metadata.get('reward', 0) < min_reward:
+                            continue
 
-                memories.append({
-                    'memory': memory_text,
-                    'intent': metadata.get('intent', ''),
-                    'reward': metadata.get('reward', 0.0),
-                    'task_index': metadata.get('task_index', -1),
-                })
+                    memories.append({
+                        'memory': memory_text,
+                        'intent': metadata.get('intent', ''),
+                        'reward': metadata.get('reward', 0.0),
+                        'task_index': metadata.get('task_index', -1),
+                    })
 
             logger.debug(f"Retrieved {len(memories)} memories for intent: {intent[:50]}...")
             return memories
