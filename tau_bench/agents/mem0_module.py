@@ -40,7 +40,6 @@ class Mem0Module:
         self,
         collection_name: str,
         delete_existing: bool = False,
-        config: Optional[Dict] = None
     ):
         """
         Initialize mem0 memory module.
@@ -76,23 +75,14 @@ class Mem0Module:
             }
         }
 
-        # Merge user config if provided
-        if config:
-            default_config.update(config)
-
         # Initialize mem0
         self.memory = Memory.from_config(default_config)
 
         # Clear existing memories if requested
         if delete_existing:
+            print("Deleting existing memories from mem0")
             try:
-                # mem0's way to clear all memories for a user/collection
-                # Note: mem0 organizes by user_id, so we use collection_name as user_id
-                all_memories = self.memory.get_all(user_id=collection_name)
-                if all_memories:
-                    logger.info(f"Deleting {len(all_memories)} existing memories from {collection_name}")
-                    for mem in all_memories:
-                        self.memory.delete(mem['id'], user_id=collection_name)
+                self.memory.delete_all(agent_id="our_agent")
             except Exception as e:
                 logger.warning(f"Could not clear existing memories: {e}")
 
@@ -158,43 +148,15 @@ class Mem0Module:
             # Search memories using mem0
             results = self.memory.search(
                 query=intent,
-                user_id=self.collection_name,
+                agent_id="our_agent",
                 limit=limit
-            )
-
-            # Convert mem0 format to our expected format
-            memories = []
+            )['results']
+            memory_string = ""
             for result in results:
-                # Handle both dict and string formats from mem0
-                if isinstance(result, str):
-                    # If result is a string, it's just the memory text
-                    # We don't have metadata, so skip filtering
-                    memories.append({
-                        'memory': result,
-                        'intent': '',
-                        'reward': 1.0,  # Assume high quality if we can't filter
-                        'task_index': -1,
-                    })
-                elif isinstance(result, dict):
-                    # mem0 returns: {'id', 'memory', 'metadata', 'score', ...}
-                    memory_text = result.get('memory', '')
-                    metadata = result.get('metadata', {})
-
-                    # Apply reward filter if specified
-                    if filter and 'reward' in filter:
-                        min_reward = filter['reward']
-                        if metadata.get('reward', 0) < min_reward:
-                            continue
-
-                    memories.append({
-                        'memory': memory_text,
-                        'intent': metadata.get('intent', ''),
-                        'reward': metadata.get('reward', 0.0),
-                        'task_index': metadata.get('task_index', -1),
-                    })
-
-            logger.debug(f"Retrieved {len(memories)} memories for intent: {intent[:50]}...")
-            return memories
+                intent = result.get("metadata", {}).get("intent", "")
+                memory_string += f"**Intent:** {intent}\n"
+                memory_string += f"**Memory:** {result.get("memory", "")}\n\n"
+            return memory_string
 
         except Exception as e:
             logger.error(f"Error retrieving memories: {e}")
@@ -203,7 +165,7 @@ class Mem0Module:
     def get_stats(self) -> Dict:
         """Get statistics about the memory collection."""
         try:
-            all_memories = self.memory.get_all(user_id=self.collection_name)
+            all_memories = self.memory.get_all(agent_id=self.collection_name)
             return {
                 "total_memories": len(all_memories),
                 "collection_name": self.collection_name,

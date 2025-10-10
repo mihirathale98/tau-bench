@@ -132,12 +132,12 @@ class MemoryAgentMem0(Agent):
             limit=limit
         )
 
-        memories_str = ""
-        if len(memories) > 0:
-            memories_str = "\n\n---\n\n".join([entry['memory'] for entry in memories])
-            memory_logger.info(f"Retrieved {len(memories)} memories for intent: {instruction_summary}")
+        # memories_str = ""
+        # if len(memories) > 0:
+        #     memories_str = "\n\n---\n\n".join([entry['memory'] for entry in memories])
+        #     memory_logger.info(f"Retrieved {len(memories)} memories for intent: {instruction_summary}")
 
-        return memories_str
+        return memories
 
     def generate_traj_summary(self, messages: List[Dict[str, Any]]) -> str:
         """
@@ -229,9 +229,8 @@ class MemoryAgentMem0(Agent):
         wiki = self.wiki
 
         # In test mode, retrieve and inject relevant memories
-        if mode == "test" and memory is not None:
+        if mode == "test":
             retrieved_memory = self.retrieve_memory(memory, instruction_summary, limit=MEMORY_RETRIEVAL_LIMIT)
-
             if len(retrieved_memory) > 0:
                 additional_prompt = f"""
                 You have also been provided with memory recorded from past trajectories, which can be used to guide your actions.
