@@ -27,6 +27,8 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+
+
 class Mem0Module:
     """
     Wrapper around mem0's Memory API for tau-bench.
@@ -62,6 +64,8 @@ class Mem0Module:
                 "config": {
                     "collection_name": collection_name,
                     "embedding_model_dims": 1536,  # OpenAI text-embedding-3-small
+                    "host": "localhost",
+                    "port": 6333,
                 }
             },
             "embedder": {
@@ -105,23 +109,32 @@ class Mem0Module:
                 - reward: float, the task reward
                 - task_index: int, the task ID
         """
-        traj_memory = structured_memory["memory"]
+        trajectory = structured_memory["trajectory"]
         intent = structured_memory["intent"]
         reward = structured_memory["reward"]
         task_index = structured_memory["task_index"]
+        agent_id = structured_memory["agent_id"]
+        
 
         # mem0 stores memories with metadata
         # We use collection_name as user_id to organize by environment
+        print("Calling add now ")
         self.memory.add(
-            messages=traj_memory,  # The actual memory content
-            user_id=self.collection_name,
+            messages=trajectory,  # The actual memory content
+            agent_id=agent_id,
             metadata={
                 "intent": intent,
                 "reward": reward,
                 "task_index": task_index,
-            }
+            },
+            memory_type="procedural_memory"
         )
-
+        print("Added memory")
+        ## print what got added filter with task_index
+        try:
+            print(f"Memory: {self.memory.get_all(agent_id=agent_id, filters={'task_index': task_index})}")
+        except Exception as e:
+            print("Error ", e)
         logger.debug(f"Added memory for task {task_index} with reward {reward}")
 
     def retrieve_memory(

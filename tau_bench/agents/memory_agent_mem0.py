@@ -224,6 +224,7 @@ class MemoryAgentMem0(Agent):
         reward = 0.0
         task_instruction = env.task.instruction
         instruction_summary = self.get_instruction_summary(task_instruction)
+        agent_id = "our_agent"
 
         wiki = self.wiki
 
@@ -298,9 +299,11 @@ class MemoryAgentMem0(Agent):
                         structured_memory = {
                             "task_index": task_index,
                             "reward": reward,
-                            "memory": traj_summary,
+                            "trajectory": messages,
+                            "agent_id": agent_id,
                             "intent": instruction_summary
                         }
+                        print("Calling add_memory")
                         memory.add_memory(structured_memory)
                         memory_logger.info(f"✓ Stored memory for task {task_index} (reward: {reward:.2f})")
                     else:
@@ -320,7 +323,8 @@ class MemoryAgentMem0(Agent):
                 structured_memory = {
                     "task_index": task_index,
                     "reward": reward,
-                    "memory": traj_summary,
+                    "trajectory": messages,
+                    "agent_id": agent_id,
                     "intent": instruction_summary
                 }
                 memory.add_memory(structured_memory)
