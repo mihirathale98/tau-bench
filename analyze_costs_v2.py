@@ -1,6 +1,24 @@
 #!/usr/bin/env python3
 """
-Analyze token usage and costs from tau-bench airline OpenAI results.
+Analyze token usage and costs from tau-bench results with per-trial breakdown support.
+
+This version (v2) supports the new trial-based token_info structure:
+  {
+    "metadata": {...},
+    "trials": {
+      "0": [...],
+      "1": [...],
+      ...
+    }
+  }
+
+Features:
+- Per-trial cost breakdown
+- Average cost per trial
+- Extra usage (judge) cost tracking with configurable model
+- Backward compatible with old format (single trial)
+
+For the simpler version without per-trial breakdown, use analyze_costs.py
 """
 
 import json
@@ -74,7 +92,7 @@ PRICING = {
 }
 
 # Model to use for extra_usage token cost calculations
-EXTRA_USAGE_MODEL = 'gpt-4.1'
+EXTRA_USAGE_MODEL = 'gpt-4.1-mini'
 
 
 def extract_model_from_filename(filename: str) -> str:
@@ -119,24 +137,8 @@ def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int, cache
     return input_cost + output_cost
 
 
-def analyze_token_file(filepath: str) -> Tuple[TokenStats, str]:
-    """Analyze a single token info JSON file."""
-    with open(filepath, 'r') as f:
-        data = json.load(f)
-
-    # Extract model from metadata if available, otherwise from filename
-    model = 'unknown'
-    if 'metadata' in data and 'model' in data['metadata']:
-        model = data['metadata']['model']
-    else:
-        model = extract_model_from_filename(os.path.basename(filepath))
-
-    # Get token usage data - handle both old and new format
-    token_data = data.get('token_info', data) if 'token_info' in data else data
-    if not isinstance(token_data, list):
-        print(f"Warning: Unexpected data format in {filepath}")
-        return TokenStats(0, 0, 0, 0, 0, 0.0), model
-
+def analyze_task_list(task_list: List[Dict], model: str) -> TokenStats:
+    """Analyze a list of tasks and calculate token statistics."""
     total_tokens = 0
     prompt_tokens = 0
     completion_tokens = 0
@@ -144,11 +146,10 @@ def analyze_token_file(filepath: str) -> Tuple[TokenStats, str]:
     api_calls = 0
     extra_usage_cost = 0.0
     extra_usage_tokens = 0
-
     total_cost = 0.0
 
     # Handle nested structure where each task has multiple usage entries
-    for item in token_data:
+    for item in task_list:
         if isinstance(item, dict) and 'usage' in item:
             # New format with task_id and usage array
             for call in item['usage']:
@@ -240,10 +241,61 @@ def analyze_token_file(filepath: str) -> Tuple[TokenStats, str]:
         estimated_cost=total_cost,
         extra_usage_tokens=extra_usage_tokens,
         extra_usage_cost=extra_usage_cost
-    ), model
+    )
 
 
-def save_results_to_file(results: List[Tuple[str, TokenStats, str]], output_file: str, total_cost: float, total_extra_cost: float, total_extra_tokens: int):
+def analyze_token_file(filepath: str) -> Tuple[Dict[str, TokenStats], TokenStats, str]:
+    """Analyze a single token info JSON file.
+
+    Returns:
+        - per_trial_stats: Dict mapping trial number to TokenStats
+        - total_stats: TokenStats for all trials combined
+        - model: The model name
+    """
+    with open(filepath, 'r') as f:
+        data = json.load(f)
+
+    # Extract model from metadata if available, otherwise from filename
+    model = 'unknown'
+    if 'metadata' in data and 'model' in data['metadata']:
+        model = data['metadata']['model']
+    else:
+        model = extract_model_from_filename(os.path.basename(filepath))
+
+    # Get token usage data - handle both old and new format
+    per_trial_stats = {}
+
+    if 'trials' in data:
+        # New format with trials as high-level key
+        for trial_key, trial_tasks in data['trials'].items():
+            per_trial_stats[trial_key] = analyze_task_list(trial_tasks, model)
+    elif 'token_info' in data:
+        # Old format - treat as single trial "0"
+        per_trial_stats['0'] = analyze_task_list(data['token_info'], model)
+    else:
+        # Very old format
+        if isinstance(data, list):
+            per_trial_stats['0'] = analyze_task_list(data, model)
+        else:
+            print(f"Warning: Unexpected data format in {filepath}")
+            return {}, TokenStats(0, 0, 0, 0, 0, 0.0), model
+
+    # Calculate total stats across all trials
+    total_stats = TokenStats(
+        total_tokens=sum(s.total_tokens for s in per_trial_stats.values()),
+        prompt_tokens=sum(s.prompt_tokens for s in per_trial_stats.values()),
+        completion_tokens=sum(s.completion_tokens for s in per_trial_stats.values()),
+        cached_tokens=sum(s.cached_tokens for s in per_trial_stats.values()),
+        api_calls=sum(s.api_calls for s in per_trial_stats.values()),
+        estimated_cost=sum(s.estimated_cost for s in per_trial_stats.values()),
+        extra_usage_tokens=sum(s.extra_usage_tokens for s in per_trial_stats.values()),
+        extra_usage_cost=sum(s.extra_usage_cost for s in per_trial_stats.values())
+    )
+
+    return per_trial_stats, total_stats, model
+
+
+def save_results_to_file(results: List[Tuple[str, Dict[str, TokenStats], TokenStats, str]], output_file: str, total_cost: float, total_extra_cost: float, total_extra_tokens: int):
     """Save analysis results to a JSON file."""
     output_data = {
         "summary": {
@@ -260,35 +312,67 @@ def save_results_to_file(results: List[Tuple[str, TokenStats, str]], output_file
     }
 
     # Add individual run data
-    for run_name, stats, model in results:
-        output_data["runs"].append({
+    for run_name, per_trial_stats, total_stats, model in results:
+        run_data = {
             "run_name": run_name,
             "model": model,
-            "api_calls": stats.api_calls,
-            "total_tokens": stats.total_tokens,
-            "prompt_tokens": stats.prompt_tokens,
-            "completion_tokens": stats.completion_tokens,
-            "cached_tokens": stats.cached_tokens,
-            "estimated_cost": stats.estimated_cost,
-            "extra_usage_tokens": stats.extra_usage_tokens,
-            "extra_usage_cost": stats.extra_usage_cost,
-            "extra_usage_model": EXTRA_USAGE_MODEL
-        })
+            "total": {
+                "api_calls": total_stats.api_calls,
+                "total_tokens": total_stats.total_tokens,
+                "prompt_tokens": total_stats.prompt_tokens,
+                "completion_tokens": total_stats.completion_tokens,
+                "cached_tokens": total_stats.cached_tokens,
+                "estimated_cost": total_stats.estimated_cost,
+                "extra_usage_tokens": total_stats.extra_usage_tokens,
+                "extra_usage_cost": total_stats.extra_usage_cost,
+                "extra_usage_model": EXTRA_USAGE_MODEL
+            },
+            "trials": {}
+        }
+
+        # Add per-trial data
+        for trial_key, trial_stats in per_trial_stats.items():
+            run_data["trials"][trial_key] = {
+                "api_calls": trial_stats.api_calls,
+                "total_tokens": trial_stats.total_tokens,
+                "prompt_tokens": trial_stats.prompt_tokens,
+                "completion_tokens": trial_stats.completion_tokens,
+                "cached_tokens": trial_stats.cached_tokens,
+                "estimated_cost": trial_stats.estimated_cost,
+                "extra_usage_tokens": trial_stats.extra_usage_tokens,
+                "extra_usage_cost": trial_stats.extra_usage_cost
+            }
+
+        # Add average per trial
+        num_trials = len(per_trial_stats)
+        if num_trials > 0:
+            run_data["average_per_trial"] = {
+                "api_calls": total_stats.api_calls / num_trials,
+                "total_tokens": total_stats.total_tokens / num_trials,
+                "prompt_tokens": total_stats.prompt_tokens / num_trials,
+                "completion_tokens": total_stats.completion_tokens / num_trials,
+                "cached_tokens": total_stats.cached_tokens / num_trials,
+                "estimated_cost": total_stats.estimated_cost / num_trials,
+                "extra_usage_tokens": total_stats.extra_usage_tokens / num_trials,
+                "extra_usage_cost": total_stats.extra_usage_cost / num_trials
+            }
+
+        output_data["runs"].append(run_data)
     
     # Group by model for summary
     model_costs = {}
     total_extra_cost_calc = 0.0
     total_extra_tokens_calc = 0
-    for _, stats, model in results:
+    for _, per_trial_stats, total_stats, model in results:
         if model not in model_costs:
             model_costs[model] = {'cost': 0, 'runs': 0, 'tokens': 0}
         # Only add the main agent cost (exclude extra_usage_cost)
-        main_agent_cost = stats.estimated_cost - stats.extra_usage_cost
+        main_agent_cost = total_stats.estimated_cost - total_stats.extra_usage_cost
         model_costs[model]['cost'] += main_agent_cost
         model_costs[model]['runs'] += 1
-        model_costs[model]['tokens'] += stats.total_tokens
-        total_extra_cost_calc += stats.extra_usage_cost
-        total_extra_tokens_calc += stats.extra_usage_tokens
+        model_costs[model]['tokens'] += total_stats.total_tokens
+        total_extra_cost_calc += total_stats.extra_usage_cost
+        total_extra_tokens_calc += total_stats.extra_usage_tokens
 
     # Add model summary
     for model, data in model_costs.items():
@@ -301,19 +385,19 @@ def save_results_to_file(results: List[Tuple[str, TokenStats, str]], output_file
         }
 
     # Add extra usage summary
-    if total_extra_cost_calc > 0:
+    if total_extra_cost > 0:
         output_data["extra_usage_summary"] = {
             "model": EXTRA_USAGE_MODEL,
-            "total_tokens": total_extra_tokens_calc,
-            "total_cost": total_extra_cost_calc,
-            "runs": sum(1 for _, stats, _ in results if stats.extra_usage_cost > 0)
+            "total_tokens": total_extra_tokens,
+            "total_cost": total_extra_cost,
+            "runs": sum(1 for _, _, total_stats, _ in results if total_stats.extra_usage_cost > 0)
         }
     else:
         output_data["extra_usage_summary"] = None
-
+    
     with open(output_file, 'w') as f:
         json.dump(output_data, f, indent=2)
-
+    
     print(f"Results saved to: {output_file}")
 
 
@@ -346,25 +430,51 @@ def main():
         filename = os.path.basename(filepath)
         run_name = filename.replace('_token_info.json', '')
 
-        stats, model = analyze_token_file(filepath)
-        results.append((run_name, stats, model))
-        total_cost += stats.estimated_cost
+        per_trial_stats, total_stats, model = analyze_token_file(filepath)
+        results.append((run_name, per_trial_stats, total_stats, model))
+        total_cost += total_stats.estimated_cost
 
         print(f"Run: {run_name}")
         print(f"Model: {model}")
-        print(f"API Calls: {stats.api_calls:,}")
-        print(f"Total Tokens: {stats.total_tokens:,}")
-        print(f"  - Prompt: {stats.prompt_tokens:,}")
-        print(f"  - Completion: {stats.completion_tokens:,}")
-        print(f"  - Cached: {stats.cached_tokens:,}")
+        print(f"Number of Trials: {len(per_trial_stats)}")
+
+        # Display per-trial costs
+        if len(per_trial_stats) > 1:
+            print(f"\nPer-Trial Breakdown:")
+            for trial_key in sorted(per_trial_stats.keys(), key=lambda x: int(x)):
+                trial_stats = per_trial_stats[trial_key]
+                trial_main_cost = trial_stats.estimated_cost - trial_stats.extra_usage_cost
+                print(f"  Trial {trial_key}:")
+                print(f"    Main Agent ({model}): ${trial_main_cost:.6f}")
+                if trial_stats.extra_usage_tokens > 0:
+                    print(f"    Extra Usage ({EXTRA_USAGE_MODEL}): ${trial_stats.extra_usage_cost:.6f} ({trial_stats.extra_usage_tokens:,} tokens)")
+                print(f"    TOTAL: ${trial_stats.estimated_cost:.6f} ({trial_stats.api_calls} calls, {trial_stats.total_tokens:,} tokens)")
+
+            # Average per trial
+            avg_cost = total_stats.estimated_cost / len(per_trial_stats)
+            avg_main_cost = (total_stats.estimated_cost - total_stats.extra_usage_cost) / len(per_trial_stats)
+            avg_extra_cost = total_stats.extra_usage_cost / len(per_trial_stats)
+            print(f"\n  Average per trial:")
+            print(f"    Main Agent: ${avg_main_cost:.6f}")
+            if total_stats.extra_usage_cost > 0:
+                print(f"    Extra Usage: ${avg_extra_cost:.6f}")
+            print(f"    TOTAL: ${avg_cost:.6f}")
+            print()
+
+        # Total across all trials
+        print(f"Total API Calls: {total_stats.api_calls:,}")
+        print(f"Total Tokens: {total_stats.total_tokens:,}")
+        print(f"  - Prompt: {total_stats.prompt_tokens:,}")
+        print(f"  - Completion: {total_stats.completion_tokens:,}")
+        print(f"  - Cached: {total_stats.cached_tokens:,}")
 
         # Cost breakdown
-        main_agent_cost = stats.estimated_cost - stats.extra_usage_cost
+        main_agent_cost = total_stats.estimated_cost - total_stats.extra_usage_cost
         print(f"\nCost Breakdown:")
         print(f"  Main Agent ({model}): ${main_agent_cost:.6f}")
-        if stats.extra_usage_tokens > 0:
-            print(f"  Extra Usage ({EXTRA_USAGE_MODEL}): ${stats.extra_usage_cost:.6f} ({stats.extra_usage_tokens:,} tokens)")
-        print(f"  TOTAL: ${stats.estimated_cost:.6f}")
+        if total_stats.extra_usage_tokens > 0:
+            print(f"  Extra Usage ({EXTRA_USAGE_MODEL}): ${total_stats.extra_usage_cost:.6f} ({total_stats.extra_usage_tokens:,} tokens)")
+        print(f"  TOTAL: ${total_stats.estimated_cost:.6f}")
         print("-" * 60)
 
     # Summary
@@ -375,10 +485,10 @@ def main():
     print()
 
     # Sort by cost for top spenders
-    results_by_cost = sorted(results, key=lambda x: x[1].estimated_cost, reverse=True)
+    results_by_cost = sorted(results, key=lambda x: x[2].estimated_cost, reverse=True)
     print("Most Expensive Runs:")
-    for i, (name, stats, model) in enumerate(results_by_cost[:5], 1):
-        print(f"{i}. {model}: ${stats.estimated_cost:.6f}")
+    for i, (name, per_trial_stats, total_stats, model) in enumerate(results_by_cost[:5], 1):
+        print(f"{i}. {name} ({model}): ${total_stats.estimated_cost:.6f}")
 
     # Group by model
     print("\nCost by Model:")
@@ -386,22 +496,22 @@ def main():
     extra_model_costs = {EXTRA_USAGE_MODEL: {'cost': 0.0, 'runs': 0, 'tokens': 0}}
     total_extra_cost = 0.0
     total_extra_tokens = 0
-    for _, stats, model in results:
+    for _, per_trial_stats, total_stats, model in results:
         if model not in model_costs:
             model_costs[model] = {'cost': 0, 'runs': 0, 'tokens': 0}
         # Only add the main agent cost (exclude extra_usage_cost)
-        main_agent_cost = stats.estimated_cost - stats.extra_usage_cost
+        main_agent_cost = total_stats.estimated_cost - total_stats.extra_usage_cost
         model_costs[model]['cost'] += main_agent_cost
         model_costs[model]['runs'] += 1
-        model_costs[model]['tokens'] += stats.total_tokens
+        model_costs[model]['tokens'] += total_stats.total_tokens
 
         # Accumulate extra usage costs separately
-        total_extra_cost += stats.extra_usage_cost
-        total_extra_tokens += stats.extra_usage_tokens
-        if stats.extra_usage_cost > 0:
-            extra_model_costs[EXTRA_USAGE_MODEL]['cost'] += stats.extra_usage_cost
+        total_extra_cost += total_stats.extra_usage_cost
+        total_extra_tokens += total_stats.extra_usage_tokens
+        if total_stats.extra_usage_cost > 0:
+            extra_model_costs[EXTRA_USAGE_MODEL]['cost'] += total_stats.extra_usage_cost
             extra_model_costs[EXTRA_USAGE_MODEL]['runs'] += 1
-            extra_model_costs[EXTRA_USAGE_MODEL]['tokens'] += stats.extra_usage_tokens
+            extra_model_costs[EXTRA_USAGE_MODEL]['tokens'] += total_stats.extra_usage_tokens
 
     # Combine model costs with extra model costs for display
     all_model_costs = {**model_costs, **extra_model_costs}

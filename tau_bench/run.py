@@ -58,7 +58,7 @@ def run(config: RunConfig) -> List[EnvRunResult]:
             "user_model": config.user_model,
             "env": config.env
         },
-        "token_info": []
+        "trials": {}
     }
     
     if config.task_split == "train":
@@ -66,7 +66,7 @@ def run(config: RunConfig) -> List[EnvRunResult]:
     else:
         delete_existing = False
     
-    memory = MemModule(collection_name=f"memory_{config.env}", delete_existing=delete_existing)
+    memory = MemModule(collection_name=f"memory_{config.env}", delete_existing=False)
     if config.task_ids and len(config.task_ids) > 0:
         print(f"Running tasks {config.task_ids} (checkpoint path: {ckpt_path})")
     else:
@@ -99,6 +99,7 @@ def run(config: RunConfig) -> List[EnvRunResult]:
                     memory=memory,
                     mode=config.task_split,
                     budget=config.budget,
+                    max_num_steps=config.max_num_steps
                 )
                 token_info = res.token_info
                 result = EnvRunResult(
@@ -131,11 +132,15 @@ def run(config: RunConfig) -> List[EnvRunResult]:
                 with open(ckpt_path, "w") as f:
                     json.dump(data + [result.model_dump()], f, indent=2)
 
-                # Accumulate token info with task_id and usage structure
+                # Accumulate token info with trial as high-level key
                 if token_info:  # Only add if there's token info
-                    all_token_info["token_info"].append({
+                    trial_key = str(i)
+                    if trial_key not in all_token_info["trials"]:
+                        all_token_info["trials"][trial_key] = []
+
+                    all_token_info["trials"][trial_key].append({
                         "task_id": idx,
-                        "usage": token_info
+                        "usage": token_info,
                     })
 
                 # Save accumulated token info

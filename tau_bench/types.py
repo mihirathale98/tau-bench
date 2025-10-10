@@ -90,3 +90,4 @@ class RunConfig(BaseModel):
     user_strategy: str = "llm"
     few_shot_displays_path: Optional[str] = None
     budget: int = 4
+    max_num_steps: int = 30
