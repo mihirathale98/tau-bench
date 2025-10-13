@@ -38,6 +38,7 @@ def run(config: RunConfig) -> List[EnvRunResult]:
         user_strategy=config.user_strategy,
         user_model=config.user_model,
         user_provider=config.user_model_provider,
+        user_temperature=config.user_temperature,
         task_split=config.task_split,
     )
     agent = agent_factory(
@@ -95,6 +96,7 @@ def run(config: RunConfig) -> List[EnvRunResult]:
                 user_model=config.user_model,
                 task_split=config.task_split,
                 user_provider=config.user_model_provider,
+                user_temperature=config.user_temperature,
                 task_index=idx,
             )
 

@@ -35,17 +35,22 @@ class HumanUserSimulationEnv(BaseUserSimulationEnv):
 
 
 class LLMUserSimulationEnv(BaseUserSimulationEnv):
-    def __init__(self, model: str, provider: str) -> None:
+    def __init__(self, model: str, provider: str, temperature: float = 0.0) -> None:
         super().__init__()
         self.messages: List[Dict[str, Any]] = []
         self.model = model
         self.provider = provider
+        self.temperature = temperature
         self.total_cost = 0.0
         self.reset()
 
     def generate_next_message(self, messages: List[Dict[str, Any]]) -> str:
         res = completion(
-            model=self.model, custom_llm_provider=self.provider, messages=messages
+            model=self.model,
+            custom_llm_provider=self.provider,
+            messages=messages,
+            temperature=self.temperature,
+            seed=42,
         )
         message = res.choices[0].message
         self.messages.append(message.model_dump())
@@ -321,6 +326,7 @@ def load_user(
     user_strategy: Union[str, UserStrategy],
     model: Optional[str] = "gpt-4o",
     provider: Optional[str] = None,
+    temperature: float = 0.0,
 ) -> BaseUserSimulationEnv:
     if isinstance(user_strategy, str):
         user_strategy = UserStrategy(user_strategy)
@@ -331,7 +337,7 @@ def load_user(
             raise ValueError("LLM user strategy requires a model")
         if provider is None:
             raise ValueError("LLM user strategy requires a model provider")
-        return LLMUserSimulationEnv(model=model, provider=provider)
+        return LLMUserSimulationEnv(model=model, provider=provider, temperature=temperature)
     elif user_strategy == UserStrategy.REACT:
         if model is None:
             raise ValueError("React user strategy requires a model")

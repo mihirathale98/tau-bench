@@ -49,6 +49,12 @@ def parse_args() -> RunConfig:
         help="The sampling temperature for the action model",
     )
     parser.add_argument(
+        "--user-temperature",
+        type=float,
+        default=0.0,
+        help="The sampling temperature for the user simulator",
+    )
+    parser.add_argument(
         "--task-split",
         type=str,
         default="test",
@@ -81,6 +87,7 @@ def parse_args() -> RunConfig:
         env=args.env,
         agent_strategy=args.agent_strategy,
         temperature=args.temperature,
+        user_temperature=args.user_temperature,
         task_split=args.task_split,
         start_index=args.start_index,
         end_index=args.end_index,
