@@ -16,7 +16,7 @@ echo "================================"
 
 for i in $(seq 2 $NUM_TRIALS); do
   # OUTPUT_FOLDER="res_airline_openai_its_judge_mini_4.1-mini_budget_${BUDGET}_trial_$i"
-  OUTPUT_FOLDER="res_retail_openai_xyz$i"
+  OUTPUT_FOLDER="res_retail_openai_gpt-4.1-mini_$i"
   echo ""
   echo "Trial $i/$NUM_TRIALS - Output folder: $OUTPUT_FOLDER"
   
@@ -32,10 +32,10 @@ for i in $(seq 2 $NUM_TRIALS); do
       --user-strategy llm \
       --max-concurrency 115 \
       --temperature 0 \
-      --num-trials 1 \
+      --num-trials 5 \
       --log-dir $OUTPUT_FOLDER \
       --task-split test \
-      --budget $BUDGET \
+      # --budget $BUDGET \
       --max-num-steps 30 
     echo "  Completed model: $model"
   done

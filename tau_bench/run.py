@@ -152,9 +152,11 @@ def run(config: RunConfig) -> List[EnvRunResult]:
             res = list(executor.map(_run, idxs))
             results.extend(res)
 
-    pass_hat_ks = display_metrics(results)
+    pass_hat_ks, pass_at_ks = display_metrics(results)
     with open(ckpt_path.replace(".json", "_pass_hat_ks.json"), "w") as f:
         json.dump(pass_hat_ks, f, indent=2)
+    with open(ckpt_path.replace(".json", "_pass_at_ks.json"), "w") as f:
+        json.dump(pass_at_ks, f, indent=2)
         
     with open(ckpt_path, "w") as f:
         json.dump([result.model_dump() for result in results], f, indent=2)
@@ -264,8 +266,25 @@ def display_metrics(results: List[EnvRunResult]) -> dict[int, float]:
         for c in c_per_task_id.values():
             sum_task_pass_hat_k += comb(c, k) / comb(num_trials, k)
         pass_hat_ks[k] = sum_task_pass_hat_k / len(c_per_task_id)
+    
+    # Calculate pass@k (standard metric)
+    pass_at_ks: dict[int, float] = {}
+    for k in range(1, num_trials + 1):
+        sum_task_pass_at_k = 0
+        for c in c_per_task_id.values():
+            # pass@k = 1 - (n-c choose k) / (n choose k)
+            # where n is total trials, c is number of successes
+            if c >= k:
+                sum_task_pass_at_k += 1.0
+            else:
+                sum_task_pass_at_k += 1 - (comb(num_trials - c, k) / comb(num_trials, k))
+        pass_at_ks[k] = sum_task_pass_at_k / len(c_per_task_id)
+    
     print(f"🏆 Average reward: {avg_reward}")
-    print("📈 Pass^k")
+    print("📈 Pass^k (unbiased estimator)")
     for k, pass_hat_k in pass_hat_ks.items():
         print(f"  k={k}: {pass_hat_k}")
-    return pass_hat_ks
+    print("📊 Pass@k (standard metric)")
+    for k, pass_at_k in pass_at_ks.items():
+        print(f"  k={k}: {pass_at_k}")
+    return pass_hat_ks, pass_at_ks
