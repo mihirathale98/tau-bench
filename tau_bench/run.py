@@ -70,9 +70,11 @@ def run(config: RunConfig) -> List[EnvRunResult]:
     # Initialize appropriate memory module based on agent strategy
     if config.agent_strategy == "memory-mem0":
         from tau_bench.agents.mem0_module import Mem0Module
-        memory = Mem0Module(collection_name=f"memory_{config.env}", delete_existing=delete_existing)
+        assert config.vector_collection_name is not None, "vector_collection_name is required for memory-mem0 agent strategy"
+        memory = Mem0Module(collection_name=config.vector_collection_name, delete_existing=delete_existing)
     elif config.agent_strategy == "memory":
-        memory = MemModule(collection_name=f"memory_{config.env}", delete_existing=delete_existing)
+        assert config.vector_collection_name is not None, "vector_collection_name is required for memory agent strategy"
+        memory = MemModule(collection_name=config.vector_collection_name, delete_existing=delete_existing)
     else:
         memory = None  # Non-memory strategies don't need memory module
     if config.task_ids and len(config.task_ids) > 0:
