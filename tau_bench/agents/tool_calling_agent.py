@@ -71,14 +71,16 @@ class ToolCallingAgent(Agent):
                 custom_llm_provider=self.provider,
                 tools=self.tools_info,
                 temperature=self.temperature,
-                # budget=budget,
-                # return_response_only=False,
+                budget=budget,
+                return_response_only=False,
                 api_base=os.getenv("AGENT_BASE_URL"),
                 api_key=os.getenv("OPENAI_API_KEY", "dummy-key"),
                 drop_params=True,
             )
-            # logging.info(f"Response: {res}")
-            next_message = res.choices[0].message.model_dump()
+            # print(res)
+            # next_message = res.choices[0].message.model_dump()
+            next_message = res.choices[0].message.provider_specific_fields['choices'][0]['message']
+            
             if next_message["role"] == "assistant":
                 if 'content' not in next_message:
                     next_message["content"] = ""

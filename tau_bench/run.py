@@ -274,7 +274,8 @@ def display_metrics(results: List[EnvRunResult]) -> dict[int, float]:
         for c in c_per_task_id.values():
             # pass@k = 1 - (n-c choose k) / (n choose k)
             # where n is total trials, c is number of successes
-            if c >= k:
+            # Special case: if there are fewer than k failures, impossible to pick k failures
+            if num_trials - c < k:
                 sum_task_pass_at_k += 1.0
             else:
                 sum_task_pass_at_k += 1 - (comb(num_trials - c, k) / comb(num_trials, k))
