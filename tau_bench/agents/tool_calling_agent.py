@@ -51,7 +51,7 @@ class ToolCallingAgent(Agent):
         
 
     def solve(
-        self, env: Env, task_index: Optional[int] = None, max_num_steps: int = 30, memory: Optional[Any] = None, mode: str = "train", budget: int = 4
+        self, env: Env, task_index: Optional[int] = None, max_num_steps: int = 30, mode: str = "train", budget: int = 4
     ) -> SolveResult:
         total_cost = 0.0
         env_reset_res = env.reset(task_index=task_index)
@@ -64,6 +64,8 @@ class ToolCallingAgent(Agent):
             {"role": "user", "content": obs},
         ]
         token_info = []
+        ground_truth_actions = env.task.actions
+        ground_truth_actions = [action.model_dump() for action in ground_truth_actions]
         for _ in range(max_num_steps):
             res = completion(
                 messages=messages,
@@ -71,15 +73,18 @@ class ToolCallingAgent(Agent):
                 custom_llm_provider=self.provider,
                 tools=self.tools_info,
                 temperature=self.temperature,
-                budget=budget,
-                return_response_only=False,
+                # budget=budget,
+                # return_response_only=False,
                 api_base=os.getenv("AGENT_BASE_URL"),
                 api_key=os.getenv("OPENAI_API_KEY", "dummy-key"),
                 drop_params=True,
+                # extra_body={
+                #     'extra_data': {'ground_truth': ground_truth_actions}
+                # }
             )
             # print(res)
-            # next_message = res.choices[0].message.model_dump()
-            next_message = res.choices[0].message.provider_specific_fields['choices'][0]['message']
+            next_message = res.choices[0].message.model_dump()
+            # next_message = res.choices[0].message.provider_specific_fields['choices'][0]['message']
             
             if next_message["role"] == "assistant":
                 if 'content' not in next_message:

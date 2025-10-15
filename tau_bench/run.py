@@ -15,7 +15,6 @@ from tau_bench.agents.base import Agent
 from tau_bench.types import EnvRunResult, RunConfig
 from litellm import provider_list
 from tau_bench.envs.user import UserStrategy
-from tau_bench.agents.mem_module import MemModule
 
 
 def run(config: RunConfig) -> List[EnvRunResult]:
@@ -66,7 +65,6 @@ def run(config: RunConfig) -> List[EnvRunResult]:
     else:
         delete_existing = False
     
-    memory = MemModule(collection_name=f"memory_{config.env}", delete_existing=False)
     if config.task_ids and len(config.task_ids) > 0:
         print(f"Running tasks {config.task_ids} (checkpoint path: {ckpt_path})")
     else:
@@ -96,7 +94,6 @@ def run(config: RunConfig) -> List[EnvRunResult]:
                 res = agent.solve(
                     env=isolated_env,
                     task_index=idx,
-                    memory=memory,
                     mode=config.task_split,
                     budget=config.budget,
                     max_num_steps=config.max_num_steps
