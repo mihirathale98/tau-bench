@@ -41,6 +41,7 @@ class SolveResult(BaseModel):
     info: Dict[str, Any]
     total_cost: Optional[float] = None
     token_info: Optional[List[Dict[str, Any]]] = None
+    trajectory_data: Optional[List[Dict[str, Any]]] = None
 
 
 class EnvInfo(BaseModel):

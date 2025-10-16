@@ -99,6 +99,7 @@ def run(config: RunConfig) -> List[EnvRunResult]:
                     max_num_steps=config.max_num_steps
                 )
                 token_info = res.token_info
+                trajectory_data = res.trajectory_data
                 result = EnvRunResult(
                     task_id=idx,
                     reward=res.reward,
@@ -114,7 +115,8 @@ def run(config: RunConfig) -> List[EnvRunResult]:
                     traj=[],
                     trial=i,
                 )
-                token_info = [] # Empty list
+                token_info = []  # Empty list
+                trajectory_data = None  # No trajectory data on error
             print(
                 "✅" if result.reward == 1 else "❌",
                 f"task_id={idx}",
@@ -143,6 +145,17 @@ def run(config: RunConfig) -> List[EnvRunResult]:
                 # Save accumulated token info
                 with open(ckpt_path.replace(".json", "_token_info.json"), "w") as f:
                     json.dump(all_token_info, f, indent=2)
+
+                # Save trajectory data organized by trial
+                if trajectory_data:
+                    traj_file_path = ckpt_path.replace(".json", f"_trial_{i}_trajectories.jsonl")
+                    # Append to trial-specific file
+                    with open(traj_file_path, "a") as f:
+                        traj_entry = {
+                            "task_id": idx,
+                            "trajectory": trajectory_data,
+                        }
+                        f.write(json.dumps(traj_entry) + "\n")
             return result
 
         with ThreadPoolExecutor(max_workers=config.max_concurrency) as executor:

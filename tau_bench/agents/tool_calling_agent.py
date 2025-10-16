@@ -7,7 +7,7 @@ from typing import List, Optional, Dict, Any
 import os
 
 from openai import OpenAI
-client = OpenAI(base_url=os.getenv("AGENT_BASE_URL"))
+client = OpenAI(base_url=os.getenv("AGENT_BASE_URL"), api_key=os.getenv("OPENAI_API_KEY", "dummy-key"))
 
 # Additional litellm logging suppression
 litellm.suppress_debug_info = True
@@ -32,6 +32,16 @@ logging.getLogger('litellm.llms.huggingface.chat').setLevel(logging.WARNING)
 logging.getLogger('litellm.llms.huggingface.chat.transformation').setLevel(logging.WARNING)
 
 
+def get_conversation_context(messages: List[Dict[str, Any]]) -> str:
+    context = ""
+    for message in messages:
+        context += f"{message['role']}: {message['content']}\n"
+        if "tool_calls" in message:
+            tool_call = message["tool_calls"][0]
+            context+= f"Tool Call : {json.dumps(tool_call)}"
+    return context
+
+
 class ToolCallingAgent(Agent):
     def __init__(
         self,
@@ -48,8 +58,6 @@ class ToolCallingAgent(Agent):
         self.temperature = temperature
         
         
-        
-
     def solve(
         self, env: Env, task_index: Optional[int] = None, max_num_steps: int = 30, mode: str = "train", budget: int = 4
     ) -> SolveResult:
@@ -58,31 +66,42 @@ class ToolCallingAgent(Agent):
         obs = env_reset_res.observation
         info = env_reset_res.info.model_dump()
         reward = 0.0
-        
+
         messages: List[Dict[str, Any]] = [
             {"role": "system", "content": self.wiki},
             {"role": "user", "content": obs},
         ]
         token_info = []
+        trajectory_data = []  # Collect trajectory data for each step
         ground_truth_actions = env.task.actions
         ground_truth_actions = [action.model_dump() for action in ground_truth_actions]
         for _ in range(max_num_steps):
-            res = completion(
-                messages=messages,
+            # res = completion(
+            #     messages=messages,
+            #     model=self.model,
+            #     custom_llm_provider=self.provider,
+            #     tools=self.tools_info,
+            #     temperature=self.temperature,
+            #     # budget=budget,
+            #     # return_response_only=False,
+            #     api_base=os.getenv("AGENT_BASE_URL"),
+            #     api_key=os.getenv("OPENAI_API_KEY", "dummy-key"),
+            #     drop_params=True,
+            #     # extra_body={
+            #     #     'extra_data': {'ground_truth': ground_truth_actions}
+            #     # }
+            # )
+            # print(res)
+            res = client.chat.completions.create(
                 model=self.model,
-                custom_llm_provider=self.provider,
+                messages=messages,
                 tools=self.tools_info,
                 temperature=self.temperature,
-                # budget=budget,
-                # return_response_only=False,
-                api_base=os.getenv("AGENT_BASE_URL"),
-                api_key=os.getenv("OPENAI_API_KEY", "dummy-key"),
-                drop_params=True,
-                # extra_body={
-                #     'extra_data': {'ground_truth': ground_truth_actions}
-                # }
+                extra_body={
+                    'return_response_only': False,
+                    'budget': budget,
+                }
             )
-            # print(res)
             next_message = res.choices[0].message.model_dump()
             # next_message = res.choices[0].message.provider_specific_fields['choices'][0]['message']
             
@@ -105,6 +124,17 @@ class ToolCallingAgent(Agent):
             env_response = env.step(action)
             reward = env_response.reward
             info = {**info, **env_response.info.model_dump()}
+
+            # Collect trajectory data for this step
+            step_data = {
+                "conversation_context": get_conversation_context(messages),
+                "selected_message": res.metadata['responses'][res.metadata['selected_index']],
+                "all_candidates": res.metadata['responses'],
+                "scores": res.metadata['scores'],
+                
+            }
+            trajectory_data.append(step_data)
+
             if action.name != RESPOND_ACTION_NAME:
                 next_message["tool_calls"] = next_message["tool_calls"][:1]
                 messages.extend(
@@ -134,6 +164,7 @@ class ToolCallingAgent(Agent):
             messages=messages,
             total_cost=total_cost,
             token_info=token_info,
+            trajectory_data=trajectory_data,
         )
 
 
