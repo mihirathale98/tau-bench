@@ -19,4 +19,11 @@ setup(
         "numpy>=1.26.4",
         "litellm>=1.41.0",
     ],
+    extras_require={
+        "mcp": [
+            "fastmcp>=0.2.0",
+            "uvicorn>=0.27.0",
+            "starlette>=0.36.0",
+        ],
+    },
 )
