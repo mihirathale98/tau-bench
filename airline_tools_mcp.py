@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Annotated
 import threading
 import asyncio
 
+from pydantic import BaseModel, Field
 from fastmcp import FastMCP
 from starlette.applications import Starlette
 from starlette.routing import Route
@@ -53,6 +54,21 @@ logger.info(f"Loaded {len(airline_data.get('flights', {}))} flights, "
             f"{len(airline_data.get('users', {}))} users")
 
 
+# Define Pydantic models for nested structures to preserve all fields
+class FlightInfo(BaseModel):
+    flight_number: str = Field(description="Flight number, such as 'HAT001'.")
+    date: str = Field(description="The date for the flight in the format 'YYYY-MM-DD', such as '2024-05-01'.")
+
+class PassengerInfo(BaseModel):
+    first_name: str = Field(description="The first name of the passenger, such as 'Noah'.")
+    last_name: str = Field(description="The last name of the passenger, such as 'Brown'.")
+    dob: str = Field(description="The date of birth of the passenger in the format 'YYYY-MM-DD', such as '1990-01-01'.")
+
+class PaymentMethod(BaseModel):
+    payment_id: str = Field(description="The payment id stored in user profile, such as 'credit_card_7815826', 'gift_card_7815826', 'certificate_7815826'.")
+    amount: float = Field(description="The amount to be paid.")
+
+
 def reload_database():
     """Reload the airline database from source files."""
     global airline_data
@@ -86,9 +102,10 @@ OriginIATA = Annotated[str, "The IATA code for the origin city, such as 'SFO'."]
 DestinationIATA = Annotated[str, "The IATA code for the destination city, such as 'JFK'."]
 FlightType = Annotated[str, "The flight type: 'one_way' or 'round_trip'."]
 Cabin = Annotated[str, "The cabin class: 'basic_economy', 'economy', or 'business'."]
-FlightsList = Annotated[List[Dict[str, Any]], "An array of objects containing details about each piece of flight. Each object should have 'flight_number' (string, e.g. 'HAT001') and 'date' (string in 'YYYY-MM-DD' format, e.g. '2024-05-01')."]
-PassengersList = Annotated[List[Dict[str, Any]], "An array of objects containing details about each passenger. Each object should have 'first_name' (string), 'last_name' (string), and 'dob' (date of birth in 'YYYY-MM-DD' format, e.g. '1990-01-01')."]
-PaymentMethodsList = Annotated[List[Dict[str, Any]], "An array of objects containing details about each payment method. Each object should have 'payment_id' (string, such as 'credit_card_7815826', 'gift_card_7815826', 'certificate_7815826') and 'amount' (number)."]
+# Use Pydantic models for complex nested structures
+FlightsList = Annotated[List[FlightInfo], "An array of flight objects with flight_number and date."]
+PassengersList = Annotated[List[PassengerInfo], "An array of passenger objects with first_name, last_name, and dob."]
+PaymentMethodsList = Annotated[List[PaymentMethod], "An array of payment method objects with payment_id and amount."]
 TotalBaggages = Annotated[int, "The total number of baggage items included in the reservation."]
 NonfreeBaggages = Annotated[int, "The number of non-free baggage items included in the reservation."]
 Insurance = Annotated[str, "Whether to include travel insurance: 'yes' or 'no'."]
@@ -115,6 +132,11 @@ def book_reservation(
     insurance: Insurance,
 ) -> str:
     """Book a reservation."""
+    # Convert Pydantic models to dicts for tau-bench
+    flights_dicts = [f.model_dump() for f in flights]
+    passengers_dicts = [p.model_dump() for p in passengers]
+    payment_methods_dicts = [pm.model_dump() for pm in payment_methods]
+
     return BookReservation.invoke(
         airline_data,
         user_id,
@@ -122,9 +144,9 @@ def book_reservation(
         destination,
         flight_type,
         cabin,
-        flights,
-        passengers,
-        payment_methods,
+        flights_dicts,
+        passengers_dicts,
+        payment_methods_dicts,
         total_baggages,
         nonfree_baggages,
         insurance,
@@ -217,7 +239,8 @@ def update_reservation_flights(
     flights: FlightsList,
 ) -> str:
     """Update the flights of a reservation."""
-    return UpdateReservationFlights.invoke(airline_data, reservation_id, flights)
+    flights_dicts = [f.model_dump() for f in flights]
+    return UpdateReservationFlights.invoke(airline_data, reservation_id, flights_dicts)
 
 
 @mcp.tool(description="Update the passengers of an existing reservation.")
@@ -226,7 +249,8 @@ def update_reservation_passengers(
     passengers: PassengersList,
 ) -> str:
     """Update the passengers of a reservation."""
-    return UpdateReservationPassengers.invoke(airline_data, reservation_id, passengers)
+    passengers_dicts = [p.model_dump() for p in passengers]
+    return UpdateReservationPassengers.invoke(airline_data, reservation_id, passengers_dicts)
 
 
 async def run_reload_server():
