@@ -1,15 +1,15 @@
 #!/bin/bash
 
-export AGENT_BASE_URL="https://api.openai.com/v1"
-# export AGENT_BASE_URL="http://localhost:8108/v1"
+# export AGENT_BASE_URL="https://api.openai.com/v1"
+export AGENT_BASE_URL="http://localhost:8108/v1"
 
 NUM_TRIALS=2
-MODELS=("gpt-4.1" "gpt-5-nano" "gpt-4o" "gpt-4.1-mini")
+# MODELS=("gpt-4.1" "gpt-5-nano" "gpt-4o" "gpt-4.1-mini")
 # MODELS=("gpt-5-nano" "gpt-4o" "gpt-4.1-mini")
-# MODELS=("gpt-4.1-mini")
+MODELS=("gpt-4.1-mini")
 BUDGET=4
 
-DIR="latency_results/openai_baseline"
+DIR="latency_results/openai_its"
 
 
 echo "Starting benchmark runs..."
@@ -40,8 +40,8 @@ for i in $(seq 2 $NUM_TRIALS); do
       --num-trials 5 \
       --log-dir $OUTPUT_FOLDER \
       --task-split test \
-      --max-num-steps 30 
-      # --budget $BUDGET 
+      --max-num-steps 30 \
+      --budget $BUDGET 
     echo "  Completed model: $model"
   done
   echo "Completed trial $i/$NUM_TRIALS"
