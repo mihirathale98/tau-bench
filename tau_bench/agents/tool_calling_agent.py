@@ -5,6 +5,7 @@ from litellm import completion
 import litellm
 from typing import List, Optional, Dict, Any
 import os
+import time
 
 from openai import OpenAI
 client = OpenAI(base_url=os.getenv("AGENT_BASE_URL"))
@@ -53,12 +54,13 @@ class ToolCallingAgent(Agent):
     def solve(
         self, env: Env, task_index: Optional[int] = None, max_num_steps: int = 30, mode: str = "train", budget: int = 4
     ) -> SolveResult:
+        start_time = time.time()  # Start timing
         total_cost = 0.0
         env_reset_res = env.reset(task_index=task_index)
         obs = env_reset_res.observation
         info = env_reset_res.info.model_dump()
         reward = 0.0
-        
+
         messages: List[Dict[str, Any]] = [
             {"role": "system", "content": self.wiki},
             {"role": "user", "content": obs},
@@ -128,12 +130,17 @@ class ToolCallingAgent(Agent):
                 )
             if env_response.done:
                 break
+
+        end_time = time.time()  # End timing
+        latency = end_time - start_time
+
         return SolveResult(
             reward=reward,
             info=info,
             messages=messages,
             total_cost=total_cost,
             token_info=token_info,
+            latency=latency,
         )
 
 

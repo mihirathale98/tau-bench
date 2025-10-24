@@ -99,12 +99,14 @@ def run(config: RunConfig) -> List[EnvRunResult]:
                     max_num_steps=config.max_num_steps
                 )
                 token_info = res.token_info
+                latency = res.latency if hasattr(res, 'latency') and res.latency is not None else 0.0
                 result = EnvRunResult(
                     task_id=idx,
                     reward=res.reward,
                     info=res.info,
                     traj=res.messages,
                     trial=i,
+                    latency=latency,
                 )
             except Exception as e:
                 result = EnvRunResult(
@@ -113,6 +115,7 @@ def run(config: RunConfig) -> List[EnvRunResult]:
                     info={"error": str(e), "traceback": traceback.format_exc()},
                     traj=[],
                     trial=i,
+                    latency=0.0,
                 )
                 token_info = [] # Empty list
             print(
@@ -154,6 +157,10 @@ def run(config: RunConfig) -> List[EnvRunResult]:
         json.dump(pass_hat_ks, f, indent=2)
     with open(ckpt_path.replace(".json", "_pass_at_ks.json"), "w") as f:
         json.dump(pass_at_ks, f, indent=2)
+
+    latency_metrics = calculate_latency_metrics(results)
+    with open(ckpt_path.replace(".json", "_latency_metrics.json"), "w") as f:
+        json.dump(latency_metrics, f, indent=2)
         
     with open(ckpt_path, "w") as f:
         json.dump([result.model_dump() for result in results], f, indent=2)
@@ -286,3 +293,78 @@ def display_metrics(results: List[EnvRunResult]) -> dict[int, float]:
     for k, pass_at_k in pass_at_ks.items():
         print(f"  k={k}: {pass_at_k}")
     return pass_hat_ks, pass_at_ks
+
+
+def calculate_latency_metrics(results: List[EnvRunResult]) -> Dict[str, Any]:
+    """
+    Calculate latency metrics from results.
+
+    Returns:
+        Dictionary containing:
+        - mean_traj_latency_per_run: Dict mapping run/trial to mean trajectory latency
+          Example: if run 0 has traj1=5s, traj2=6s, traj3=7s, then run 0 = (5+6+7)/3 = 6.0s
+        - mean_traj_latency_across_runs: Mean of the per-run means
+        - individual_trajectory_latencies: List of all individual latencies by run
+    """
+    from statistics import mean, stdev
+
+    # Group latencies by run/trial - each entry is a list of trajectory latencies
+    latencies_by_run: Dict[int, List[float]] = {}
+    all_latencies = []
+
+    for result in results:
+        run = result.trial  # trial is the run number
+        latency = result.latency if result.latency is not None else 0.0
+
+        # Group by run - each latency is one trajectory
+        if run not in latencies_by_run:
+            latencies_by_run[run] = []
+        latencies_by_run[run].append(latency)
+
+        all_latencies.append(latency)
+
+    # Calculate total time per run (sum of all trajectory latencies in that run)
+    total_time_per_run = {
+        run: sum(traj_latencies) if traj_latencies else 0.0
+        for run, traj_latencies in latencies_by_run.items()
+    }
+
+    # Calculate mean trajectory latency per run
+    # For each run: mean_traj_latency = (traj1 + traj2 + ... + trajN) / N
+    mean_traj_latency_per_run = {
+        run: mean(traj_latencies) if traj_latencies else 0.0
+        for run, traj_latencies in latencies_by_run.items()
+    }
+
+    # Calculate mean across runs (mean of the per-run means)
+    mean_traj_latency_across_runs = mean(mean_traj_latency_per_run.values()) if mean_traj_latency_per_run else 0.0
+
+    # Overall statistics (for reference)
+    overall_mean = mean(all_latencies) if all_latencies else 0.0
+    overall_std = stdev(all_latencies) if len(all_latencies) > 1 else 0.0
+
+    metrics = {
+        "individual_trajectory_latencies_by_run": {str(k): v for k, v in latencies_by_run.items()},
+        "total_time_per_run": {str(k): v for k, v in total_time_per_run.items()},
+        "mean_traj_latency_per_run": {str(k): v for k, v in mean_traj_latency_per_run.items()},
+        "mean_traj_latency_across_runs": mean_traj_latency_across_runs,
+        "overall_mean_latency": overall_mean,
+        "overall_std_latency": overall_std,
+        "total_trajectories": len(all_latencies),
+        "num_runs": len(latencies_by_run),
+    }
+
+    # Display latency metrics
+    print("\n⏱️  Latency Metrics")
+    print(f"  Mean trajectory latency across runs: {mean_traj_latency_across_runs:.2f}s")
+    print(f"  Overall mean latency: {overall_mean:.2f}s")
+    print(f"  Overall std latency: {overall_std:.2f}s")
+    print(f"  Total trajectories: {len(all_latencies)}")
+    print(f"\n  Per run metrics:")
+    for run in sorted(mean_traj_latency_per_run.keys()):
+        num_trajs = len(latencies_by_run[run])
+        total_time = total_time_per_run[run]
+        mean_time = mean_traj_latency_per_run[run]
+        print(f"    Run {run}: total={total_time:.2f}s, mean={mean_time:.2f}s (across {num_trajs} trajectories)")
+
+    return metrics

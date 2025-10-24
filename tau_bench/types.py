@@ -41,6 +41,7 @@ class SolveResult(BaseModel):
     info: Dict[str, Any]
     total_cost: Optional[float] = None
     token_info: Optional[List[Dict[str, Any]]] = None
+    latency: Optional[float] = None  # Total time in seconds for trajectory
 
 
 class EnvInfo(BaseModel):
@@ -68,6 +69,7 @@ class EnvRunResult(BaseModel):
     info: Dict[str, Any]
     traj: List[Dict[str, Any]]
     trial: int
+    latency: Optional[float] = None  # Total time in seconds for this task run
 
 
 class RunConfig(BaseModel):
